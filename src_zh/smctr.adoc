@@ -1,0 +1,720 @@
+[[smctr]]
+
+== “Smctr”控制转移记录扩展，版本 1.0
+
+记录控制流转移历史的方法不仅对性能分析有价值，而且对调试也有价值。控制流转移指跳转指令（包括函数调用和返回）、已执行的分支指令、陷阱和陷阱返回。分析工具（如 Linux perf）在采样软件执行时收集控制转移历史，从而使工具（如 AutoFDO）能够识别热路径以进行优化。
+
+控制流跟踪功能提供了非常深入的转移历史，但产生的数据量可能导致显著的性能开销，原因在于内存带宽消耗、缓冲区管理和解码器开销。控制转移记录 (CTR) 扩展提供了一种在寄存器可访问的内部芯片存储中记录有限历史的方法，旨在大幅降低收集转移历史的性能开销和复杂性。
+
+CTR 定义了一个循环（FIFO）缓冲区。每个缓冲区条目保存一条记录，用于单个记录的控制流转移。缓冲区中可以保存的记录数量取决于实现（最大支持深度）和 CTR 配置（软件选择的深度）。
+
+只记录合格的转移。合格的转移是指符合过滤条件的转移，包括特权模式和转移类型。
+
+记录的转移插入到写入指针处，然后写入指针递增，而较旧的记录转移在缓冲区满时可能会被覆盖。或者用户可以启用 RAS（返回地址栈）仿真模式，其中只记录函数调用，函数返回弹出最后一条调用记录。每个记录的转移都存储源 PC、目标 PC 和一些可选元数据（转移类型、经过周期）。
+
+CTR 缓冲区可通过间接 CSR 接口访问，以便软件可以指定要读取或写入的缓冲区中的逻辑条目。逻辑条目 0 始终对应于最新记录的转移，紧随其后的是条目 1 作为次最新，依此类推。
+
+机器级扩展 *Smctr* 涵盖了 hart 在所有特权级别上所有新增的控制状态寄存器 (CSR)、指令和行为修改。相应的 supervisor 级扩展 *Ssctr* 本质上与 Smctr 相同，只是它排除了不打算在 supervisor 级别直接访问的机器级 CSR 和行为。
+
+Smctr 和 Ssctr 都依赖于 S 模式的实现和 Sscsrind 扩展。
+
+=== CSR
+
+==== 机器控制转移记录控制寄存器 (`mctrctl`)
+
+`mctrctl` 寄存器是一个 64 位读/写寄存器，用于启用和配置 CTR 功能。
+
+.机器控制转移记录控制寄存器格式
+[%unbreakable]
+[wavedrom, , svg]
+....
+{reg: [
+    {bits:  1, name: 'U'},
+    {bits:  1, name: 'S'},
+    {bits:  1, name: 'M'},
+    {bits:  4, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'RASEMU'},
+    {bits:  1, name: 'STE'},
+    {bits:  1, name: 'MTE'},
+    {bits:  1, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'BPFRZ'},
+    {bits:  1, name: 'LCOFIFRZ'},
+    {bits:  20, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'EXCINH'},
+    {bits:  1, name: 'INTRINH'},
+    {bits:  1, name: 'TRETINH'},
+    {bits:  1, name: 'NTBREN'},
+    {bits:  1, name: 'TKBRINH'},
+    {bits:  2, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'INDCALLINH'},
+    {bits:  1, name: 'DIRCALLINH'},
+    {bits:  1, name: 'INDJMPINH'},
+    {bits:  1, name: 'DIRJMPINH'},
+    {bits:  1, name: 'CORSWAPINH'},
+    {bits:  1, name: 'RETINH'},
+    {bits:  1, name: 'INDLJMPINH'},
+    {bits:  1, name: 'DIRLJMPINH'},
+    {bits:  12, name: '<i>WPRI</i>'},
+    {bits:  4, name: 'Custom'},
+], config:{lanes: 8, hspace:1024}}
+....
+
+.机器控制转移记录控制寄存器字段定义
+[%unbreakable]
+[width="100%",cols="20%,80%",options="header",]
+|===
+|字段 |描述
+|M, S, U |在选定的特权模式下启用转移记录。
+
+|RASEMU |启用 RAS（返回地址栈）仿真模式。参见 <<RAS (返回地址栈) 仿真模式>>。
+
+|MTE |当 M=0 时，启用记录到 M 模式的陷阱。参见 <<外部陷阱>>。
+
+|STE |当 S=0 时，启用记录到 S 模式的陷阱。参见 <<外部陷阱>>。
+
+|BPFRZ |在捕获到 M 模式或 S 模式的断点异常时设置 `sctrstatus`.FROZEN。参见 <<冻结>>。
+
+|LCOFIFRZ |在捕获到 M 模式或 S 模式的本地计数器溢出中断 (LCOFI) 时设置 `sctrstatus`.FROZEN。参见 <<冻结>>。
+
+|EXCINH |禁止记录异常。参见 <<转移类型过滤>>。
+
+|INTRINH |禁止记录中断。参见 <<转移类型过滤>>。
+
+|TRETINH |禁止记录陷阱返回。参见 <<转移类型过滤>>。
+
+|NTBREN |启用记录未执行的分支。参见 <<转移类型过滤>>。
+
+|TKBRINH |禁止记录已执行的分支。参见 <<转移类型过滤>>。
+
+|INDCALLINH |禁止记录间接调用。参见 <<转移类型过滤>>。
+
+|DIRCALLINH |禁止记录直接调用。参见 <<转移类型过滤>>。
+
+|INDJMPINH |禁止记录间接跳转（无链接）。参见 <<转移类型过滤>>。
+
+|DIRJMPINH |禁止记录直接跳转（无链接）。参见 <<转移类型过滤>>。
+
+|CORSWAPINH |禁止记录协程交换。参见 <<转移类型过滤>>。
+
+|RETINH |禁止记录函数返回。参见 <<转移类型过滤>>。
+
+|INDLJMPINH |禁止记录其他间接跳转（带链接）。参见 <<转移类型过滤>>。
+
+|DIRLJMPINH |禁止记录其他直接跳转（带链接）。参见 <<转移类型过滤>>。
+|Custom[3:0] | WARL 位，指定用于自定义用途。值 0 必须对应于标准行为。参见 <<自定义扩展>>。
+|===
+
+[%unbreakable]
+--
+除 M、S、U 和 BPFRZ 外，所有字段都是可选的。所有未实现的字段都是只读 0，而所有已实现的字段都是可写的。如果实现了 Sscofpmf 扩展，则 LCOFIFRZ 必须可写。
+--
+
+[NOTE]
+====
+_由于 CTR 对 RV32 实现的投资回报率较低，CTR 不完全支持 RV32。虽然 RV32 中的控制流转移可以记录，但 RV32 无法访问 `x__ctrctl` 的 63:32 位。未来的扩展可以通过添加 3 个新 CSR（`mctrctlh`、`sctrctlh` 和 `vsctrctlh`）来提供此访问，从而增加对 RV32 的支持。_
+====
+
+==== Supervisor 控制转移记录控制寄存器 (`sctrctl`)
+
+`sctrctl` 寄存器提供 supervisor 模式访问 `mctrctl` 的子集。
+
+`sctrctl` 中的位 2 和 9 是只读 0。因此，`mctrctl` 中的 M 和 MTE 字段无法通过 `sctrctl` 访问。所有其他 `mctrctl` 字段都可以通过 `sctrctl` 访问。
+
+==== 虚拟 Supervisor 控制转移记录控制寄存器 (`vsctrctl`)
+
+如果实现了 H 扩展，则 `vsctrctl` 寄存器是一个 64 位读/写寄存器，它是 VS 模式的 supervisor 寄存器 `sctrctl` 的版本。当 V=1 时，`vsctrctl` 替代通常的 `sctrctl`，因此通常读取或修改 `sctrctl` 的指令实际上会访问 `vsctrctl`。
+
+.虚拟 Supervisor 控制转移记录控制寄存器格式
+[%unbreakable]
+[wavedrom, , svg]
+....
+{reg: [
+    {bits:  1, name: 'U'},
+    {bits:  1, name: 'S'},
+    {bits:  5, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'RASEMU'},
+    {bits:  1, name: 'STE'},
+    {bits:  2, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'BPFRZ'},
+    {bits:  1, name: 'LCOFIFRZ'},
+    {bits:  20, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'EXCINH'},
+    {bits:  1, name: 'INTRINH'},
+    {bits:  1, name: 'TRETINH'},
+    {bits:  1, name: 'NTBREN'},
+    {bits:  1, name: 'TKBRINH'},
+    {bits:  2, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'INDCALLINH'},
+    {bits:  1, name: 'DIRCALLINH'},
+    {bits:  1, name: 'INDJMPINH'},
+    {bits:  1, name: 'DIRJMPINH'},
+    {bits:  1, name: 'CORSWAPINH'},
+    {bits:  1, name: 'RETINH'},
+    {bits:  1, name: 'INDLJMPINH'},
+    {bits:  1, name: 'DIRLJMPINH'},
+    {bits:  12, name: '<i>WPRI</i>'},
+    {bits:  4, name: 'Custom'},
+], config:{lanes: 8, hspace:1024}}
+....
+
+.虚拟 Supervisor 控制转移记录控制寄存器字段定义
+[%unbreakable]
+[width="100%",cols="20%,80%",options="header",]
+|===
+|字段 |描述
+|S |在 VS 模式下启用转移记录。
+|U |在 VU 模式下启用转移记录。
+|STE |当 S=0 时，启用记录到 VS 模式的陷阱。参见 <<外部陷阱>>。
+|BPFRZ |在捕获到 VS 模式的断点异常时设置 `sctrstatus`.FROZEN。参见 <<冻结>>。
+|LCOFIFRZ |在捕获到 VS 模式的本地计数器溢出中断 (LCOFI) 时设置 `sctrstatus`.FROZEN。参见 <<冻结>>。
+2+|其他字段定义与 `sctrctl` 的定义匹配。`vsctrctl` 中实现的可选字段应与 `sctrctl` 中实现的字段匹配。
+|===
+
+[NOTE]
+[%unbreakable]
+====
+_与 CTR 状态寄存器或 CTR 条目寄存器不同，CTR 控制寄存器具有 VS 模式版本。这允许客户机直接管理 CTR 配置，而无需陷阱到 HS 模式，同时确保客户机配置（最值得注意的是特权模式使能位）在 V=0 时不影响 CTR 行为。_
+====
+
+==== Supervisor 控制转移记录深度寄存器 (`sctrdepth`)
+
+32 位 `sctrdepth` 寄存器指定 CTR 缓冲区的深度。
+
+.Supervisor 控制转移记录深度寄存器格式
+[%unbreakable]
+[wavedrom, , svg]
+....
+{reg: [
+    {bits:  3, name: 'DEPTH'},
+    {bits:  29, name: '<i>WPRI</i>'},
+], config:{lanes: 1, hspace:1024}}
+....
+
+.Supervisor 控制转移记录深度寄存器字段定义
+[%unbreakable]
+[width="100%",cols="15%,85%",options="header",]
+|===
+|字段 |描述
+|DEPTH |WARL 字段，选择 CTR 缓冲区的深度。编码：
+
+‘000 - 16
+
+‘001 - 32
+
+‘010 - 64
+
+‘011 - 128
+
+‘100 - 256
+
+'11x - 保留
+
+CTR 缓冲区的深度决定了硬件记录转移的条目数量。对于深度为 N，硬件记录转移到条目 0..N-1。当选定条目在 N 到 255 范围内时，所有 <<_entry_registers, 条目寄存器>> 都读取为“0”且为只读。当深度增加时，新可访问的条目包含未指定但合法的值。
+
+支持哪些 DEPTH 值是实现定义的。
+|===
+
+从 VS 模式或 VU 模式访问 `sctrdepth` 会引发虚拟指令异常，除非 CTR 状态使能访问限制适用。参见 <<状态使能访问控制>>。
+
+[NOTE]
+[%unbreakable]
+====
+_预计操作系统 (OS) 只会在启动时访问 `sctrdepth`，以选择最大支持深度值。更频繁的访问可能会导致虚拟化场景中性能下降，因为会产生 VS 模式的陷阱。_
+
+_在某些情况下，软件可能会选择只操作条目的一部分，以减少开销。在这种情况下，工具可以选择只读取较低的条目，操作系统可以选择只保存/恢复较低的条目，同时使用 SCTRCLR 清除其他条目。_
+
+_可配置深度的价值在于支持虚拟机迁移。预计平台规范可能会指定必须支持一个或多个 CTR 深度值。hypervisor 可能希望限制客户机使用这些必需的深度之一，以确保此类客户机可以迁移到符合平台规范的任何系统。为 VS 模式访问 `sctrdepth` 指定的陷阱行为确保 hypervisor 可以施加此类限制。_
+====
+
+==== Supervisor 控制转移记录状态寄存器 (`sctrstatus`)
+
+32 位 `sctrstatus` 寄存器授予对 CTR 状态信息的访问权限，并在 CTR 激活时由硬件更新。当当前特权模式启用记录且 CTR 未冻结时，CTR 处于激活状态。
+
+.Supervisor 控制转移记录状态寄存器格式
+[%unbreakable]
+[wavedrom, , svg]
+....
+{reg: [
+    {bits:  8, name: 'WRPTR'},
+    {bits:  23, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'FROZEN'},
+], config:{lanes: 2, hspace:1024}}
+....
+
+.Supervisor 控制转移记录状态寄存器字段定义
+[%unbreakable]
+[width="100%",cols="15%,85%",options="header",]
+|===
+|字段 |描述
+|WRPTR |WARL 字段，指示下一个要写入的物理 CTR 缓冲区条目。在新转移记录后递增（参见 <<行为>>），但在 `__x__ctrctl`.RASEMU=1 时有例外，参见 <<RAS (返回地址栈) 仿真模式>>。对于给定的 CTR 深度（其中深度 = 2^(DEPTH+4)^），WRPTR 在递增时当值匹配 depth-1 时回绕到 0，在递减时当值为 0 时回绕到 depth-1。超出表示 depth-1 所需的位（例如，深度为 16 时为位 7:4）是只读 0。在深度更改时，WRPTR 包含未指定但合法的值。
+|FROZEN |禁止转移记录。参见 <<冻结>>。
+|===
+
+`sctrstatus` 中未定义的位是 WPRI。状态字段可能会在未来的扩展中添加，软件应忽略但不保留任何它无法识别的字段。未定义的位必须实现为只读 0，除非实现了自定义扩展并启用了它（参见 <<自定义扩展>>）。
+
+[NOTE]
+[%unbreakable]
+====
+_逻辑条目 0（通过 `siselect`=0x200 访问）始终是 WRPTR 条目之前的物理缓冲区条目。更一般地，与逻辑条目 X (X < depth) 关联的物理缓冲区条目 Y 可以使用公式 Y = (WRPTR - X - 1) % depth 确定，其中 depth = 2^(DEPTH+4)^。逻辑条目 >= depth 是只读 0。_
+====
+[NOTE]
+[%unbreakable]
+====
+_由于 `sctrstatus` 寄存器由硬件更新，因此写入时应谨慎。如果在 CTR 激活时执行多指令读-改-写 `sctrstatus`，并且在读写之间合格转移或导致 CTR 冻结的陷阱完成，则硬件更新可能会丢失。软件可能希望在执行读-改-写之前确保 CTR 不活动，方法是确保 `sctrstatus`.FROZEN=1，或者当前特权模式未启用记录。_
+
+_恢复 CTR 状态时，应在恢复 CTR 条目状态之前写入 `sctrstatus`。这确保了软件对逻辑 CTR 条目的写入修改了正确的物理条目。_
+====
+
+[NOTE]
+[%unbreakable]
+====
+_暴露 WRPTR 提供了一种更有效的方法来合成 CTR 条目。如果模拟了合格的控制转移，模拟器可以简单地递增 WRPTR，然后将合成的记录写入逻辑条目 0。如果在 RASEMU=1 时模拟了合格的函数返回，模拟器可以清除逻辑条目 0 的 `ctrsource`.V，然后递减 WRPTR。_
+
+_暴露 WRPTR 也可能支持 Linux perf 的 https://lwn.net/Articles/802821[[.underline]#栈拼接#] 功能。_
+====
+
+[NOTE]
+[%unbreakable]
+====
+_Smctr/Ssctr 依赖于 S 模式的实现，因为大部分 CTR 状态只能通过 S 模式 CSR 访问。如果将来需要移除此依赖，扩展可以添加 `mctrdepth` 和 `mctrstatus` CSR，它们分别反映 `sctrdepth` 和 `sctrstatus` 的相同状态。此外，此类扩展应使 CTR 条目可通过 `miselect`/`mireg*` 访问。参见 <<条目寄存器>>。_
+====
+
+=== 条目寄存器
+
+控制转移记录存储在 CTR 缓冲区中，每个缓冲区条目存储有关单个转移的信息。CTR 缓冲区条目通过 Sscsrind 扩展定义的间接寄存器访问机制进行逻辑访问。`siselect` 索引范围 0x200 到 0x2FF 保留用于 CTR 逻辑条目 0 到 255。当 `siselect` 保持在此范围内时，`sireg` 提供对 `ctrsource` 的访问，`sireg2` 提供对 `ctrtarget` 的访问，`sireg3` 提供对 `ctrdata` 的访问。`sireg4`、`sireg5` 和 `sireg6` 是只读 0。
+
+当 `vsiselect` 保持在 0x200..0x2FF 范围内时，`vsireg*` 寄存器提供对与模拟 `sireg*` 寄存器相同的 CTR 条目寄存器状态的访问。V=1 没有单独的条目寄存器集。
+
+有关 S 模式和 VS 模式下 CTR 访问可能受限的情况，请参见 <<状态使能访问控制>>。
+
+==== 控制转移记录源寄存器 (`ctrsource`)
+
+`ctrsource` 寄存器包含源程序计数器，它是记录的控制转移指令的 `pc`，或记录的陷阱的 epc。当转移记录在选定的 CTR 缓冲区条目中时，硬件会设置有效 (V) 位，这意味着 `ctrsource`、`ctrtarget` 和 `ctrdata` 中的数据对于此条目是有效的。
+
+`ctrsource` 是一个 MXLEN 位 WARL 寄存器，必须能够保存所有可用作 `pc` 的有效虚拟或物理地址。它不需要能够保存任何无效地址；实现可以将无效地址转换为寄存器能够保存的有效地址。当 XLEN < MXLEN 时，显式写入（由软件）和隐式写入（用于记录的转移）都将零扩展。
+
+.MXLEN=64 的控制转移记录源寄存器格式
+[%unbreakable]
+[wavedrom, , svg]
+....
+{reg: [
+    {bits:  1, name: 'V'},
+    {bits:  63, name: 'PC[63:1]'},
+], config:{lanes: 1, hspace: 1024}}
+....
+
+[NOTE]
+[%unbreakable]
+====
+_CTR 条目寄存器定义为 MXLEN，尽管用于访问它们的 `x__ireg*__` CSR 是 XLEN，以确保在转换为 RV32 时，RV64 中记录的条目不会因 CSR 宽度调制而截断。_
+====
+
+==== 控制转移记录目标寄存器 (`ctrtarget`)
+
+`ctrtarget` 寄存器包含记录的转移的目标（目的地）程序计数器。可选的 MISP 位在记录的转移是指令时由硬件设置，该指令的目标或已执行/未执行方向被分支预测器错误预测。MISP 在未实现时只读 0。
+
+`ctrtarget` 是一个 MXLEN 位 WARL 寄存器，必须能够保存所有可用作 `pc` 的有效虚拟或物理地址。它不需要能够保存任何无效地址；实现可以将无效地址转换为寄存器能够保存的有效地址。当 XLEN < MXLEN 时，显式写入（由软件）和隐式写入（由记录的转移）都将零扩展。
+
+.MXLEN=64 的控制转移记录目标寄存器格式
+[%unbreakable]
+[wavedrom, , svg]
+....
+{reg: [
+    {bits:  1, name: 'MISP'},
+    {bits:  31, name: 'PC[31:1]'},
+    {bits:  32, name: 'PC[63:32]'},
+], config:{lanes: 2, hspace: 1024}}
+....
+
+==== 控制转移记录元数据寄存器 (`ctrdata`)
+
+`ctrdata` 寄存器包含记录的转移的元数据。此寄存器必须实现，尽管其中的所有字段都是可选的。未实现的字段是只读 0。`ctrdata` 是一个 64 位寄存器。
+
+.控制转移记录元数据寄存器格式
+[%unbreakable]
+[wavedrom, , svg]
+....
+{reg: [
+    {bits:  4, name: 'TYPE'},
+    {bits:  11, name: '<i>WPRI</i>'},
+    {bits:  1, name: 'CCV'},
+    {bits:  16, name: 'CC'},
+    {bits:  32, name: '<i>WPRI</i>'},
+], config:{lanes: 2, hspace: 1024}}
+....
+
+.控制转移记录元数据寄存器字段定义
+[%unbreakable]
+[width="100%",cols="15%,75%,10%",options="header",]
+|===
+|字段 |描述 |访问
+|TYPE[3:0] a|
+使用 xref:transfer-type-defs[xrefstyle=short] 中列出的编码，标识条目中记录的控制流转移类型。不支持此字段的实现将报告 0。
+|WARL
+
+|CCV |周期计数有效。参见 <<周期计数>>。 |WARL
+
+|CC[15:0] |周期计数，由周期计数指数 (CCE，在 CC[15:12]) 和周期计数尾数 (CCM，在 CC[11:0]) 组成。参见 <<周期计数>>。 |WARL
+|===
+
+`ctrdata` 中未定义的位是 WPRI。未定义的位必须实现为只读 0，除非实现了自定义扩展并启用了它（参见 <<自定义扩展>>）。
+
+[NOTE]
+[%unbreakable]
+====
+_与 <<_transfer_type_filtering, 转移类型过滤>> 位在 `mctrctl` 中一样，`ctrdata`.TYPE 位利用了 E-trace itype 编码。_
+====
+
+=== 指令
+==== Supervisor CTR 清除指令
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits: 7,  name: 'opcode',    attr: ['7', 'SYSTEM'], type: 8},
+  {bits: 5,  name: 'rd',    attr: ['5', '0'], type: 2},
+  {bits: 3,  name: 'funct3', attr: ['3', '0'], type: 8},
+  {bits: 5,  name: 'rs1',   attr: ['5', '0'], type: 4},
+  {bits: 12, name: 'func12', attr: ['12', 'SCTRCLR (0x104)'], type: 8},
+]}
+....
+
+SCTRCLR 指令执行以下操作：
+
+* 将所有 CTR <<_entry_registers, 条目寄存器>> 清零，适用于所有 DEPTH 值
+* 将 CTR 周期计数器和 CCV 清零（参见 <<周期计数>>）
+
+SCTRCLR 之后，在下一个合格控制转移之前，对 `ctrsource`、`ctrtarget` 或 `ctrdata` 的任何读取都将返回 0。此外，SCTRCLR 之后记录的第一个转移将具有 `ctrdata`.CCV=0。
+
+SCTRCLR 在 U 模式下引发非法指令异常，在 VU 模式下引发虚拟指令异常，除非 CTR 状态使能访问限制适用。参见 <<状态使能访问控制>>。
+
+=== 状态使能访问控制
+
+当 Smstateen 实现时，`mstateen0`.CTR 位控制从特权低于 M 模式的特权模式访问 CTR 寄存器状态。当 `mstateen0`.CTR=1 时，访问 CTR 寄存器状态的行为如 <<CSRs>> 和 <<条目寄存器>> 中所述，而 SCTRCLR 的行为如 <<Supervisor CTR 清除指令>> 中所述。当 `mstateen0`.CTR=0 且特权模式低于 M 模式时，以下操作会引发非法指令异常：
+
+* 尝试访问 `sctrctl`、`vsctrctl`、`sctrdepth` 或 `sctrstatus`
+* 当 `siselect` 在 0x200..0x2FF 范围内时，尝试访问 `sireg*`，或当 `vsiselect` 在 0x200..0x2FF 范围内时，尝试访问 `vsireg*`
+* 执行 SCTRCLR 指令
+
+当 `mstateen0`.CTR=0 时，在特权低于 M 模式的特权模式下执行的合格控制转移将继续隐式更新条目寄存器和 `sctrstatus`。
+
+如果实现了 H 扩展且 `mstateen0`.CTR=1，则 `hstateen0`.CTR 位控制当 V=1 时对 supervisor CTR 状态的访问。此状态包括 `sctrctl`（实际上是 `vsctrctl`）、`sctrstatus` 和 `sireg*`（实际上是 `vsireg*`），当 `siselect`（实际上是 `vsiselect`）在 0x200..0x2FF 范围内时。当 `mstateen0`.CTR=0 时，`hstateen0`.CTR 是只读 0。
+
+当 `mstateen0`.CTR=1 且 `hstateen0`.CTR=1 时，VS 模式访问 supervisor CTR 状态的行为如 <<CSRs>> 和 <<条目寄存器>> 中所述，而 SCTRCLR 的行为如 <<Supervisor CTR 清除指令>> 中所述。当 `mstateen0`.CTR=1 且 `hstateen0`.CTR=0 时，VS 模式访问 supervisor CTR 状态和 VS 模式执行 SCTRCLR 都会引发虚拟指令异常。
+
+[NOTE]
+[%unbreakable]
+====
+`__sctrdepth__` _未包含在上面由 `hstateen0`.CTR 控制的 supervisor CTR 状态列表中，因为从 VS 模式访问 `sctrdepth` 会引发虚拟指令异常，无论 `hstateen0`.CTR 的值如何。_
+====
+
+当 `hstateen0`.CTR=0 时，当 V=1 时执行的合格控制转移将继续隐式更新条目寄存器和 `sctrstatus`。
+
+[NOTE]
+[%unbreakable]
+====
+_有关 `mstateen0` 和 `hstateen0` 中位 60 如何限制从特权低于 M 模式的特权模式访问 `sireg*`/`siselect` 和 `vsireg*`/`vsiselect` 的信息，请参见 <<indirect-csr>>。_
+====
+
+[NOTE]
+[%unbreakable]
+====
+_支持 Smctr/Ssctr 但不支持 Smstateen/Ssstateen 的实现可能会观察到性能下降。由于 Smctr/Ssctr 引入了大量新 CSR，因此在可能的情况下避免保存/恢复 CTR 状态是可取的。hypervisor 可能会利用状态使能来捕获对 CTR 状态的初始客户机访问，仅在客户机开始使用 CTR 后才委托 CTR 并启用客户机 CTR 状态的保存/恢复。如果没有 Smstateen/Ssstateen，hypervisor 需要在每次上下文切换时保存/恢复客户机 CTR 状态。_
+====
+
+=== 行为
+
+CTR 记录合格的控制转移。如果控制转移符合以下条件，则为合格：
+
+* 当前特权模式已启用
+* 转移类型未被禁止
+* `sctrstatus`.FROZEN 未设置
+* 转移完成/退役
+
+此类合格转移会更新逻辑条目 0 处的 <<_entry_registers, 条目寄存器>>。因此，较旧的条目会向下推入栈；逻辑条目 0 中先前的记录移动到逻辑条目 1，逻辑条目 1 中的记录移动到逻辑条目 2，依此类推。如果 CTR 缓冲区已满，则最旧的记录条目（先前在条目 depth-1 处）将丢失。
+
+记录的转移将 `ctrsource`.V 位设置为 1，并将更新所有已实现的记录字段。
+
+[NOTE]
+[%unbreakable]
+====
+_为了在使用 CTR 时收集准确且具有代表性的性能配置文件，建议硬件记录控制转移不产生额外的性能开销，例如，以退役或指令执行限制的形式，这些限制在 CTR 不活动时不存在。_
+====
+
+==== 特权模式转换
+
+改变特权模式的转移是一种特殊情况。记录什么（如果有的话）取决于源特权模式和/或目标特权模式是否启用记录，以及转移类型（陷阱或陷阱返回）。
+
+启用特权模式之间的陷阱正常记录。从禁用特权模式到启用特权模式的陷阱部分记录，`ctrsource`.PC 为 0。从启用模式到禁用模式的陷阱（称为外部陷阱）默认不记录。有关如何记录它们，请参见 <<外部陷阱>>。
+
+陷阱返回有类似的处理。启用特权模式之间的陷阱返回正常记录。从启用模式返回到禁用模式的陷阱部分记录，`ctrtarget`.PC 为 0。从禁用模式到启用模式的陷阱返回不记录。
+
+[NOTE]
+====
+_如果特权软件代表较低特权软件配置 CTR，则应确保在陷阱返回到较低特权模式之前清除其特权模式使能位（例如，Supervisor 软件的 `sctrctl`.S）。否则，陷阱返回将被记录，泄露特权源 `pc`。_
+====
+
+调试模式下的记录始终被禁止。进出调试模式的转移永远不会被记录。
+
+下表提供了特权模式转换记录的详细信息。对 FROZEN 和转移类型禁止的标准依赖也适用，但表中未涵盖。
+
+.陷阱和陷阱返回记录
+[%unbreakable]
+[width="100%",cols="18%,17%,30%,35%",]
+|===
+.2+|*转移类型* .2+| *源模式* 2+|*目标模式*
+|*启用* |*禁用*
+.2+|*陷阱* |*启用* |已记录。 | 外部陷阱。默认不记录，但参见 <<外部陷阱>>。
+
+|*禁用* |已记录，`ctrsource`.PC 为 0。 |未记录。
+
+.2+|*陷阱返回* |*启用* |已记录。 |已记录，`ctrtarget`.PC 为 0。
+
+|*禁用* |未记录。 |未记录。
+|===
+
+===== 虚拟化模式转换
+
+VS/VU 模式和 M/HS 模式之间的转换是独特的，因为它们会影响活动 CTR 控制寄存器的更改，从而影响 CTR 配置。这些虚拟化模式转换中记录什么（如果有的话）取决于 `[ms]ctrctl` 和 `vsctrctl` 中的字段。
+
+* `mctrctl`.M、`sctrctl`.S 和 `vsctrctl`.{S,U} 用于确定源模式和目标模式是否启用；
+* `mctrctl`.MTE、`sctrctl`.STE 和 `vsctrctl`.STE 用于确定是否记录外部陷阱（参见 <<外部陷阱>>）；
+* `sctrctl`.LCOFIFRZ 和 `sctrctl`.BPFRZ 确定 CTR 是否冻结（参见 <<冻结>>）
+* 对于所有其他 `__x__ctrctl` 字段，使用 `vsctrctl` 中的值。
+
+[NOTE]
+====
+_考虑一个从 VU 模式到 HS 模式的异常陷阱，其中 `vsctrctl`.U=1 和 `sctrctl`.S=1。由于源模式和目标模式都启用了记录，因此陷阱是否记录取决于 `vsctrctl` 中的 CTR 配置（例如，<<_transfer_type_filtering, 转移类型过滤器>> 位），而不是 `sctrctl`。_
+====
+
+===== 外部陷阱
+
+外部陷阱是指从启用 CTR 记录的特权模式到未启用 CTR 记录的特权模式的陷阱。默认情况下，外部陷阱不记录，但运行在陷阱目标模式下的特权软件可以选择允许 CTR 记录外部陷阱到该模式。`__x__ctrctl`.__x__TE 位允许 M 模式、S 模式和 VS 模式分别选择加入。
+
+外部陷阱记录不仅取决于目标模式，还取决于任何中间模式，这些模式比源模式特权更高但比目标模式特权更低。不仅目标模式的外部陷阱使能位必须设置，而且任何中间模式的外部陷阱使能位也必须设置。有关详细信息，请参见下表。
+
+[NOTE]
+[%unbreakable]
+====
+_要求中间模式启用外部陷阱简化了 CTR 的软件管理。考虑一个场景，其中 S 模式软件正在为 U 模式上下文 A 和 B 配置 CTR，使得外部陷阱（到任何模式）对 A 启用，但对 B 不启用。在两个上下文之间切换时，S 模式可以简单地切换 `sctrctl`.STE，而无需陷阱到 M 模式以额外切换 `mctrctl`.MTE。_
+
+_此方法不提供记录到更特权模式但不到所有中间模式的外部陷阱的灵活性。由于预计分析工具通常希望观察所有外部陷阱或不观察任何外部陷阱，因此这不被视为有意义的限制。_
+====
+
+.外部陷阱使能要求
+[%unbreakable]
+[options="header", width="85%", cols="23%,23%,54%"]
+|===
+|源模式 |目标模式 |所需外部陷阱使能
+.2+|U 模式 | S 模式 | `sctrctl`.STE
+|M 模式 | `mctrctl`.MTE, `sctrctl`.STE
+|S 模式 | M 模式 | `mctrctl`.MTE
+.3+|VU 模式 | VS 模式 | `vsctrctl`.STE
+| HS 模式 | `sctrctl`.STE, `vsctrctl`.STE
+| M 模式 | `mctrctl`.MTE, `sctrctl`.STE, `vsctrctl`.STE
+.2+| VS 模式 | HS 模式 | `sctrctl`.STE
+| M 模式 | `mctrctl`.MTE, `sctrctl`.STE
+|===
+
+在外部陷阱的记录中，`ctrtarget`.PC 为 0。
+
+[NOTE]
+[%unbreakable]
+====
+_没有记录外部陷阱返回的机制，因为外部陷阱记录包含所有相关信息，并为陷阱处理程序（例如，模拟器）提供了修改记录的机会。_
+====
+
+[NOTE]
+[%unbreakable]
+====
+_请注意，外部陷阱记录不依赖于 EXCINH/INTRINH。因此，当启用外部陷阱时，外部中断和外部异常都会被记录。_
+
+_STE 允许记录从 U 模式到 S 模式以及从 VS/VU 模式到 HS 模式的陷阱。hypervisor 可以在进入客户机之前翻转 `sctrctl`.STE，如果它希望 U 到 S 与 VS/VU 到 HS 之间有不同的行为。_
+====
+
+如果实现了外部陷阱记录，则必须实现 `mctrctl`.MTE 和 `sctrctl`.STE，如果实现了 H 扩展，则必须实现 `vsctrctl`.STE。
+
+==== 转移类型过滤
+
+默认 CTR 行为是，当所有转移类型过滤器位（`__x__ctrctl`[47:32]）未实现或为 0 时，记录启用特权模式内的所有控制转移。通过设置转移类型过滤器位，软件可以选择不记录选定的转移类型，或选择记录非默认操作。所有转移类型过滤器位都是可选的。
+
+[NOTE]
+[%unbreakable]
+====
+_由于默认情况下不记录未执行的分支，因此关联的使能位 (NTBREN) 的极性与与转移类型过滤相关的其他位（TKBRINH、RETINH 等）相反。非默认操作需要选择加入而不是选择退出。_
+====
+
+转移类型过滤器位利用了 https://github.com/riscv-non-isa/riscv-trace-spec/releases/download/v2.0rc2/riscv-trace-spec.pdf[[.underline]#RISC-V 高效跟踪规范 v2.0#] 中指定的类型定义（表 4.4 和 4.1.1 节）。为了完整性，定义如下。
+
+[NOTE]
+[%unbreakable]
+====
+_这里“间接”与“不可推断”互换使用，后者在跟踪规范中使用。两者都意味着跳转目标未在操作码中编码。_
+====
+
+.控制转移类型定义
+[#transfer-type-defs]
+[%unbreakable]
+[width="60%", cols="22%,78%", options="header",]
+|===
+| 编码 | 转移类型名称
+| 0 | _CTR 未使用_
+| 1 | 异常
+| 2 | 中断
+| 3 | 陷阱返回
+| 4 | 未执行分支
+| 5 | 已执行分支
+| 6 | _保留_
+| 7 | _保留_
+| 8 | 间接调用
+| 9 | 直接调用
+| 10 | 间接跳转（无链接）
+| 11 | 直接跳转（无链接）
+| 12 | 协程交换
+| 13 | 函数返回
+| 14 | 其他间接跳转（带链接）
+| 15 | 其他直接跳转（带链接）
+|===
+
+编码 8 到 15 指的是跳转指令的各种编码。类型如下所述。
+
+.控制转移类型定义
+[%unbreakable]
+[cols="37%,63%", options="header",]
+|===
+| 转移类型名称 | 相关操作码
+.3+| 间接调用 | JALR _x1_, _rs_ 其中 _rs_ != _x5_
+| JALR _x5_, _rs_ 其中 _rs_ != _x1_
+| C.JALR _rs1_ 其中 _rs1_ != _x5_
+.4+| 直接调用 | JAL _x1_
+| JAL _x5_
+| C.JAL
+| CM.JALT _index_
+.2+| 间接跳转（无链接） | JALR _x0_, _rs_ 其中 _rs_ != (_x1_ 或 _x5_)
+| C.JR _rs1_ 其中 _rs1_ != (_x1_ 或 _x5_)
+.3+| 直接跳转（无链接） | JAL _x0_
+| C.J
+| CM.JT _index_
+.3+| 协程交换 | JALR _x1_, _x5_
+| JALR _x5_, _x1_
+| C.JALR _x5_
+.3+| 函数返回 | JALR _rd_, _rs_ 其中 _rs_ == (_x1_ 或 _x5_) 且 _rd_ != (_x1_ 或 _x5_)
+| C.JR _rs1_ 其中 _rs1_ == (_x1_ 或 _x5_)
+| CM.POPRET(Z)
+| 其他间接跳转（带链接） | JALR _rd_, _rs_ 其中 _rs_ != (_x1_ 或 _x5_) 且 _rd_ != (_x0_, _x1_, 或 _x5_)
+| 其他直接跳转（带链接） | JAL _rd_ 其中 _rd_ != (_x0_, _x1_, 或 _x5_)
+|===
+
+
+[NOTE]
+[%unbreakable]
+====
+_如果任何转移类型过滤器位的实现导致软件性能下降，可能是由于额外的退役限制，强烈建议此性能下降仅在设置该位时适用。或者，可以省略对该位的支持。建议在所有转移类型位都清除时，保持默认 CTR 配置的软件性能。_
+====
+
+==== 周期计数
+
+`ctrdata` 寄存器可以选择性地包含自上次 CTR 记录以来经过的 CPU 周期计数。经过的周期计数由 CC 字段表示，该字段具有 12 位尾数分量（周期计数尾数，或 CCM）和 4 位指数分量（周期计数指数，或 CCE）。
+
+经过的周期计数器 (CtrCycleCounter) 以与 `mcycle` 计数器相同的速率递增。只计数 CTR 激活时的周期，其中激活意味着当前特权模式已启用记录且 CTR 未冻结。CC 字段的编码方式是，如果 CtrCycleCounter 值小于 4096，则 CCE 为 0，否则它保存 CtrCycleCounter 值中最高有效位的索引减去 11。CCM 保存 CtrCycleCounter 位 CCE+10:CCE-1。
+
+经过的周期计数可以通过软件使用以下公式计算：
+
+[subs="specialchars,quotes"]
+[%unbreakable]
+----
+if (CCE==0):
+    return CCM
+else:
+    return (2^12^ + CCM) << CCE-1
+endif
+----
+
+CtrCycleCounter 在写入 `__x__ctrctl` 和执行 SCTRCLR 时复位，以确保任何累积的周期计数不会在上下文切换时保留。
+
+支持周期计数的实现必须实现 CCV 和所有 CCM 位，但可以实现 0..4 个 CCE 中的指数位。未实现的 CCE 位是只读 0。对于支持转移类型过滤的实现，建议至少实现 3 个指数位。这允许在仅记录调用和返回时捕获大多数函数的完整延迟。
+
+支持每个 CCE 宽度所需的 CtrCycleCounter 大小如下表所示。
+
+.周期计数器大小选项
+[%unbreakable]
+[width="70%", cols="20%,38%,42%", options="header",]
+|===
+| CCE 位 | CtrCycleCounter 位 | 最大经过周期值
+| 0 | 12 | 4095
+| 1 | 13 | 8191
+| 2 | 15 | 32764
+| 3 | 19 | 524224
+| 4 | 27 | 134201344
+|===
+
+[NOTE]
+[%unbreakable]
+====
+_当 CCE>1 时，报告的周期计数粒度会降低。例如，当 CCE=3 时，周期计数器的最低 2 位不报告，因此报告的值每 4 个周期才递增一次。因此，报告的值在大多数情况下（当未报告的位非零时）表示经过周期的欠计数。平均而言，欠计数将为 (2^CCE-1^-1)/2。软件可以通过在 CCE>1 时将 (2^CCE-1^-1)/2 添加到每个计算出的周期计数值来将平均欠计数减少到 0。_
+
+_尽管这种压缩表示方法导致较大周期计数值的一些不精确性，但它产生了有意义的面积节省，将每个条目的存储从 27 位减少到 16 位。_
+====
+
+当 CCM 和 CCE 中所有已实现的位都为 1 时，CC 值饱和。
+
+CC 值仅在周期计数有效 (CCV) 位设置时才有效。如果 CCV=0，则 CC 值可能不包含自上次记录转移以来经过的活动周期的正确计数。在写入 `__x__ctrctl` 或执行 SCTRCLR 后，下一个记录将具有 CCV=0，因为 CtrCycleCounter 已复位。在 CtrCycleCounter 中可能未计数活动周期的任何其他实现特定场景之后，CCV 应额外清除。
+
+==== RAS（返回地址栈）仿真模式
+
+当可选的 `__x__ctrctl`.RASEMU 位实现并设置为 1 时，转移记录行为会改变，以模拟返回地址栈 (RAS) 的行为。
+
+* 间接和直接调用正常记录
+* 函数返回通过递减 WRPTR 然后使 WRPTR 条目失效（通过设置 ctrsource.V=0）来弹出最近的调用。因此，逻辑条目 0 失效并移动到逻辑条目 depth-1，而逻辑条目 1..depth-1 移动到 0..depth-2。
+* 协程交换影响返回和调用。逻辑条目 0 被覆盖，WRPTR 不修改。
+* 其他转移类型被禁止
+* 转移类型过滤位（`__x__ctrctl`[47:32]）和外部陷阱使能位（`__x__ctrctl`.__x__TE）被忽略
+
+[NOTE]
+[%unbreakable]
+====
+_分析工具通常会随每个样本收集调用栈。然而，栈遍历是一个复杂且通常缓慢的过程，可能需要重新编译（例如，-fno-omit-frame-pointer）才能可靠地工作。通过 RAS 仿真，工具可以要求 CTR 硬件保存调用栈，即使对于未修改的代码也是如此。_
+
+_CTR RAS 仿真有局限性。在调用栈深度大于 CTR 深度、CTR 记录在调用栈中低于 main() 的位置启用，或者 CTR 缓冲区自 main() 以来已被清除的情况下，CTR 缓冲区将只包含部分栈。_
+
+_在调用和返回不对称的情况下，例如栈展开（例如，setjmp/longjmp，C++ 异常），CTR 栈可能会损坏，其中过时的调用条目可能会留在 CTR 栈上，或者用户栈切换，其中来自多个栈的调用可能会混合在一起。_
+====
+
+[NOTE]
+[%unbreakable]
+====
+_如 <<周期计数>> 中所述，当 CCV=1 时，CC 字段提供自上次 CTR 条目记录以来经过的周期。当 RASEMU=1 时，这会带来实现挑战，因为对于每个记录的调用，自上次剩余调用条目记录以来，可能已经有几个记录的调用（以及“弹出”它们的返回）（参见 <<RAS (返回地址栈) 仿真模式>>）。这意味着返回弹出调用条目不仅不会重置周期计数器，反而会将弹出条目中的 CC 字段添加到计数器中。为了简单起见，当 RASEMU=1 时，实现可以选择为所有调用或其父调用被弹出的调用记录 CCV=0。_
+====
+
+==== 冻结
+
+当 `sctrstatus`.FROZEN=1 时，转移记录被禁止。此位可以由硬件设置（如下所述）或由软件设置。
+
+当 `sctrctl`.LCOFIFRZ=1 且本地计数器溢出中断 (LCOFI) 陷阱（由于 HPM 计数器溢出）到 M 模式或 S 模式时，硬件会设置 `sctrstatus`.FROZEN。这会禁止 CTR 记录，直到软件清除 FROZEN。LCOFI 陷阱本身不记录。
+[NOTE]
+[%unbreakable]
+====
+_LCOFI 上的冻结确保了导致采样指令 (`__x__epc`) 的执行路径得以保留，并且本地计数器溢出中断 (LCOFI) 和相关的中断服务例程 (ISR) 不会取代任何记录的转移历史状态。ISR 的责任是在 `__x__RET` 之前清除 FROZEN，如果需要继续控制转移记录。_
+
+_LCOFI 仅指由本地计数器溢出直接引起的架构陷阱。如果本地计数器溢出中断在没有陷阱的情况下被识别，则 FROZEN 不会自动设置。例如，如果 LCOFI 在中断被屏蔽时挂起，并且软件识别 LCOFI（可能通过读取 `stopi` 或 `sip`）并在陷阱引发之前清除 `sip`.LCOFIP，则不会发生冻结。因此，在处理 LCOFI 时，部分或全部 CTR 历史可能会被覆盖。这种情况预计非常罕见；对于大多数用途（例如，应用程序分析），特权模式过滤足以确保在更特权模式下处理中断时 CTR 更新被禁止。_
+====
+同样，在捕获到 M 模式或 S 模式的断点异常时，如果 `sctrctl`.BPFRZ=1，硬件会设置 FROZEN。断点异常本身不记录。
+
+[NOTE]
+[%unbreakable]
+====
+_断点异常是指原因值为断点 (3) 的同步异常，无论来源如何（ebreak、c.ebreak、Sdtrig）；它不包括进入调试模式，即使在将此实现为异常的核心中也是如此。_
+====
+
+如果实现了 H 扩展，则 LCOFI 和断点异常（捕获到 VS 模式）的冻结行为由 `vsctrctl` 中的 LCOFIFRZ 和 BPFRZ 值分别确定。这包括由 hypervisor 挂起的虚拟 LCOFI。
+
+[NOTE]
+[%unbreakable]
+====
+_当客户机使用 SBI Supervisor 软件事件 (SSE) 扩展时，LCOFI 将陷阱到 HS 模式，然后将调用注册的 VS 模式 LCOFI 处理例程。如果 `vsctrctl`.LCOFIFRZ=1，HS 模式处理程序将需要通过设置 `sctrstatus`.FROZEN=1 来模拟冻结，然后才能调用注册的处理例程。_
+====
+
+
+=== 自定义扩展
+
+任何自定义 CTR 扩展都必须与 `__x__ctrctl` 中指定自定义位的非零值相关联。当自定义位包含启用自定义扩展的非零值时，扩展可能会更改标准 CTR 行为，并可能在 `sctrstatus` 或 CTR <<_entry_registers, 条目寄存器>> 中定义新的自定义状态字段。所有自定义状态字段以及其行为被自定义扩展更改的标准状态字段，当自定义位为零时必须恢复为标准行为。这包括任何未由任何已实现标准扩展定义的位的只读 0 行为。

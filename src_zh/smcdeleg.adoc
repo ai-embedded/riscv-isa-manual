@@ -1,0 +1,87 @@
+[[smcdeleg]]
+== “Smcdeleg/Ssccfg”计数器委托扩展，版本 1.0
+
+在现代“富操作系统”环境中，硬件性能监控资源由内核、内核驱动程序和/或管理程序管理。计数器可以配置不同的范围，在某些情况下计数系统范围的事件，而在其他情况下代表单个虚拟机或应用程序计数事件。在这种环境中，计数器写入的延迟直接影响整体分析开销，因为在以下情况下频繁写入计数器：
+
+. 样本收集，以清除溢出指示，并重新加载溢出计数器
+. 进程、线程、容器或虚拟机之间的上下文切换
+
+这些扩展提供了一种方法，允许 M 模式从 S/HS 模式写入选定的计数器和事件选择器。目的是避免进出 M 模式的转换，这些转换会增加这些性能关键的 supervisor/hypervisor 代码部分的延迟。这些扩展还定义了一个新的 CSR，scountinhibit。
+
+对于机器级环境，扩展 *Smcdeleg*（“Sm”表示特权架构和机器级扩展，“cdeleg”表示计数器委托）涵盖了 hart 的所有新增 CSR 和所有行为修改，涵盖所有特权级别。对于 Supervisor 级环境，扩展 *Ssccfg*（“Ss”表示特权架构和 Supervisor 级扩展，“ccfg”表示计数器配置）提供对委托计数器和新 supervisor 级状态的访问。对于 RISC-V 硬件平台，Smcdeleg 和 Ssccfg 必须始终协同实现。
+
+=== 计数器委托
+
+`mcounteren` 寄存器允许 M 模式向下一个较低特权模式提供对选定计数器的读取访问。当启用 Smcdeleg/Ssccfg 扩展时（`menvcfg`.CDE=1），它还允许 M 模式将选定计数器委托给 S 模式。
+
+`siselect`（和 `vsiselect`）索引范围 0x40-0x5F 保留用于委托计数器访问。当计数器 _i_ 被委托时（`mcounteren`[_i_]=1 且 `menvcfg`.CDE=1），与计数器 _i_ 关联的寄存器状态可以通过 `sireg*` 读写，同时 `siselect` 保持 0x40+__i__。通过别名 CSR 可访问的计数器状态如下表所示。
+
+.间接 HPM 状态映射
+[#indirect-hpm-state-mappings]
+[width="100%",cols="21%,20%,21%,18%,20%",options="header",]
+|===
+|*`siselect` 值* |*`sireg*` |*`sireg4`* |*`sireg2`* |*`sireg5`*
+|0x40 |`cycle`^1^ |`cycleh`^1^ |`cyclecfg`^14^ |`cyclecfgh`^14^
+|0x41 4+^|_见下文_
+|0x42 |`instret`^1^ |`instreth`^1^ |`instretcfg`^14^ |`instretcfgh`^14^
+|0x43 |`hpmcounter3`^2^ |`hpmcounter3h`^2^ |`hpmevent3`^2^ |`hpmevent3h`^23^
+|… |… |… |… |…
+|0x5F |`hpmcounter31`^2^ |`hpmcounter31h`^2^ |`hpmevent31`^2^ |`hpmevent31h`^23^
+|===
+
+^1^ 依赖于 Zicntr 支持 +
+^2^ 依赖于 Zihpm 支持 +
+^3^ 依赖于 Sscofpmf 支持 +
+^4^ 依赖于 Smcntrpmf 支持
+
+[NOTE]
+====
+`__hpmevent__i` _表示_ `__mhpmevent__i` _寄存器访问的状态子集。同样，`cyclecfg` 和 `instretcfg` 分别表示 `mcyclecfg` 和 `minstretcfg` 寄存器访问的状态子集。有关子集详细信息，请参见下文。_
+====
+
+如果实现了扩展 Smstateen，请参阅扩展 Smcsrind/Sscsrind (<<indirect-csr>>)，了解如何将 CSR `mstateen0` 的位 60 设置为零以阻止从特权低于 M 模式的特权模式访问寄存器 `siselect`、`sireg*`、`vsiselect` 和 `vsireg*`，以及如何将 `hstateen0` 的位 60 设置为零以阻止从 VS 模式访问 `siselect` 和 `sireg*`（实际上是 `vsiselect` 和 `vsireg*`）。
+
+本节的其余规则仅在访问 CSR 未被 `mstateen0`[60] = 0 或 `hstateen0`[60] = 0 阻止时适用。
+
+当特权模式为 M 或 S 且 `siselect` 保持在 0x40-0x5F 范围内时，以下情况会引发非法指令异常：
+
+* 当 `menvcfg`.CDE = 0 时，尝试访问任何 `sireg*`；
+* 尝试访问 `sireg3` 或 `sireg6`；
+* 当 XLEN = 64 时，尝试访问 `sireg4` 或 `sireg5`；
+* 当 `siselect` = 0x41 时，或当 `siselect` 选择的计数器未委托给 S 模式时（`mcounteren` 中相应位 = 0），尝试访问 `sireg*`。
+
+NOTE: _内存映射的 `mtime` 寄存器不是由 supervisor 软件管理的性能监控计数器，因此对 `siselect` 值 0x41 进行了特殊处理。_
+
+对于 <<indirect-hpm-state-mappings>> 中定义的每个 `siselect` 和 `sireg*` 组合，该表进一步指示了底层计数器状态所依赖的扩展。如果底层状态所依赖的任何扩展未实现，则从 M 或 S 模式通过 `sireg*` 访问给定状态的尝试会引发非法指令异常。
+
+如果还实现了 hypervisor (H) 扩展，则根据扩展 Smcsrind/Sscsrind 的规定，当从 VS 模式或 VU 模式尝试直接访问 `vsiselect` 或 `vsireg*`，或从 VU 模式尝试访问 `siselect` 或 `sireg*` 时，会引发虚拟指令异常。此外，当 `vsiselect` 保持在 0x40-0x5F 范围内时：
+
+* 从 M 或 S 模式尝试访问任何 `vsireg*` 会引发非法指令异常。
+* 从 VS 模式尝试访问任何 `sireg*`（实际上是 `vsireg*`）会引发非法指令异常，如果 `menvcfg`.CDE = 0，或者引发虚拟指令异常，如果 `menvcfg`.CDE = 1。
+
+如果实现了 Sscofpmf，`sireg2` 和 `sireg5` 仅提供对事件选择器寄存器子集的访问。具体来说，通过 `sireg*` 访问时，事件选择器位 62 (MINH) 是只读 0。同样，如果实现了 Smcntrpmf，`sireg2` 和 `sireg5` 仅提供对计数器配置寄存器子集的访问。通过 `sireg*` 访问时，计数器配置寄存器位 62 (MINH) 是只读 0。
+
+=== Supervisor 计数器禁用 (`scountinhibit`) 寄存器
+
+Smcdeleg/Ssccfg 定义了一个新的 `scountinhibit` 寄存器，它是 `mcountinhibit` 的掩码别名。对于委托给 S 模式的计数器，关联的 `mcountinhibit` 位可以通过 `scountinhibit` 访问。对于未委托给 S 模式的计数器，`scountinhibit` 中关联的位是只读零。
+
+当 `menvcfg`.CDE=0 时，尝试访问 `scountinhibit` 会引发非法指令异常。当启用 Supervisor 计数器委托时，从 VS 模式或 VU 模式尝试访问 `scountinhibit` 会引发虚拟指令异常。
+
+=== 虚拟化 `scountovf`
+
+对于支持 Smcdeleg/Ssccfg、Sscofpmf 和 H 扩展的实现，当 `menvcfg`.CDE=1 时，从 VS 模式或 VU 模式尝试读取 `scountovf` 会引发虚拟指令异常。
+
+=== 虚拟化本地计数器溢出中断
+
+对于支持 Smcdeleg、Sscofpmf 和 Smaia 的实现，每个 CSR `mvip` 和 `mvien` 中的本地计数器溢出中断 (LCOFI) 位（位 13）已实现且可写。
+
+对于支持 Smcdeleg/Ssccfg、Sscofpmf、Smaia/Ssaia 和 H 扩展的实现，每个 `hvip` 和 `hvien` 中的 LCOFI 位（位 13）已实现且可写。
+
+[NOTE]
+====
+_`hvip` 寄存器由 hypervisor (H) 扩展定义，而 `mvien` 和 `hvien` 寄存器由 Smaia/Ssaia 扩展定义。_
+
+_由于实现了 `hvip`.LCOFI，因此 `vsie` 和 `vsip` 中 LCOFI 位（位 13）也已实现是隐式的。_
+
+_要求支持上面列出的 LCOFI 位可确保虚拟 LCOFI 可以传递给在 S 模式下运行的操作系统，以及在 VS 模式下运行的客户操作系统。`mideleg` 和 `hideleg` 中 LCOFI 位（位 13）是否实现和可写是可选的，它允许所有 LCOFI 分别委托给 S 模式和 VS 模式。_
+====

@@ -1,0 +1,236 @@
+[[sec:alloy]]
+== Alloy 中的形式化公理规范
+
+我们使用 Alloy (https://alloytools.org/) 提供了 RVWMO 内存模型的形式化规范。
+该模型可在 https://github.com/daniellustig/riscv-memory-model 在线获取。
+
+在线材料还包含一些 litmus 测试和一些示例，说明 Alloy 如何用于模型检查 <<sec:memory:porting, 第 #sec:memory:porting 节>> 中的一些映射。
+
+`  `
+
+....
+////////////////////////////////////////////////////////////////////////////////
+// =RVWMO PPO=
+
+// 保留程序顺序
+fun ppo : Event->Event {
+  // 同地址排序
+  po_loc :> Store
+  + rdw
+  + (AMO + StoreConditional) <: rfi
+
+  // 显式同步
+  + ppo_fence
+  + Acquire <: ^po :> MemoryEvent
+  + MemoryEvent <: ^po :> Release
+  + RCsc <: ^po :> RCsc
+  + pair
+
+  // 语法依赖
+  + addrdep
+  + datadep
+  + ctrldep :> Store
+
+  // 流水线依赖
+  + (addrdep+datadep).rfi
+  + addrdep.^po :> Store
+}
+
+// 全局内存顺序遵循保留程序顺序
+fact { ppo in ^gmo }
+....
+
+`  `
+
+....
+////////////////////////////////////////////////////////////////////////////////
+// =RVWMO 公理=
+
+// 加载值公理
+fun candidates[r: MemoryEvent] : set MemoryEvent {
+  (r.~^gmo & Store & same_addr[r]) // 在 gmo 中先于 r 的写入
+  + (r.^~po & Store & same_addr[r]) // 在 po 中先于 r 的写入
+}
+
+fun latest_among[s: set Event] : Event { s - s.~^gmo }
+
+pred LoadValue {
+  all w: Store | all r: Load |
+    w->r in rf <=> w = latest_among[candidates[r]]
+}
+
+// 原子性公理
+pred Atomicity {
+  all r: Store.~pair |            // 从 lr 开始，
+    no x: Store & same_addr[r] |  // 没有对相同地址的存储 x
+      x not in same_hart[r]       // 使得 x 来自不同的 hart，
+      and x in r.~rf.^gmo         // 并且 x 在 gmo 中跟随（r 读取的存储），
+      and r.pair in x.^gmo        // 并且 r 在 gmo 中跟随 x
+}
+
+// 进度公理隐式：Alloy 只考虑有限执行
+
+pred RISCV_mm { LoadValue and Atomicity /* and Progress */ }
+....
+
+`  `
+
+....
+////////////////////////////////////////////////////////////////////////////////
+// 内存的基本模型
+
+sig Hart {  // 硬件线程
+  start : one Event
+}
+sig Address {}
+abstract sig Event {
+  po: lone Event // 程序顺序
+}
+
+abstract sig MemoryEvent extends Event {
+  address: one Address,
+  acquireRCpc: lone MemoryEvent,
+  acquireRCsc: lone MemoryEvent,
+  releaseRCpc: lone MemoryEvent,
+  releaseRCsc: lone MemoryEvent,
+  addrdep: set MemoryEvent,
+  ctrldep: set Event,
+  datadep: set MemoryEvent,
+  gmo: set MemoryEvent,  // 全局内存顺序
+  rf: set MemoryEvent
+}
+sig LoadNormal extends MemoryEvent {} // l{b|h|w|d}
+sig LoadReserve extends MemoryEvent { // lr
+  pair: lone StoreConditional
+}
+sig StoreNormal extends MemoryEvent {}       // s{b|h|w|d}
+// 模型中所有 StoreConditional 都假定成功
+sig StoreConditional extends MemoryEvent {}  // sc
+sig AMO extends MemoryEvent {}               // amo
+sig NOP extends Event {}
+
+fun Load : Event { LoadNormal + LoadReserve + AMO }
+fun Store : Event { StoreNormal + StoreConditional + AMO }
+
+sig Fence extends Event {
+  pr: lone Fence, // 操作码位
+  pw: lone Fence, // 操作码位
+  sr: lone Fence, // 操作码位
+  sw: lone Fence  // 操作码位
+}
+sig FenceTSO extends Fence {}
+
+/* Alloy 编码细节：操作码位要么设置（编码，例如，
+ * 为 f.pr in iden）要么未设置（f.pr not in iden）。这些位不能用于
+ * 任何其他目的 */
+fact { pr + pw + sr + sw in iden }
+// 同样适用于排序注释
+fact { acquireRCpc + acquireRCsc + releaseRCpc + releaseRCsc in iden }
+// 不要尝试通过 pr/pw/sr/sw 编码 FenceTSO；直接使用它
+fact { no FenceTSO.(pr + pw + sr + sw) }
+....
+
+`  `
+
+....
+////////////////////////////////////////////////////////////////////////////////
+// =基本模型规则=
+
+// 排序注释组
+fun Acquire : MemoryEvent { MemoryEvent.acquireRCpc + MemoryEvent.acquireRCsc }
+fun Release : MemoryEvent { MemoryEvent.releaseRCpc + MemoryEvent.releaseRCsc }
+fun RCpc : MemoryEvent { MemoryEvent.acquireRCpc + MemoryEvent.releaseRCpc }
+fun RCsc : MemoryEvent { MemoryEvent.acquireRCsc + MemoryEvent.releaseRCsc }
+
+// 没有 store-acquire 或 load-release 这样的东西，除非两者兼有
+fact { Load & Release in Acquire }
+fact { Store & Acquire in Release }
+
+// FENCE PPO
+fun FencePRSR : Fence { Fence.(pr & sr) }
+fun FencePRSW : Fence { Fence.(pr & sw) }
+fun FencePWSR : Fence { Fence.(pw & sr) }
+fun FencePWSW : Fence { Fence.(pw & sw) }
+
+fun ppo_fence : MemoryEvent->MemoryEvent {
+    (Load  <: ^po :> FencePRSR).(^po :> Load)
+  + (Load  <: ^po :> FencePRSW).(^po :> Store)
+  + (Store <: ^po :> FencePWSR).(^po :> Load)
+  + (Store <: ^po :> FencePWSW).(^po :> Store)
+  + (Load  <: ^po :> FenceTSO) .(^po :> MemoryEvent)
+  + (Store <: ^po :> FenceTSO) .(^po :> Store)
+}
+
+// 辅助定义
+fun po_loc : Event->Event { ^po & address.~address }
+fun same_hart[e: Event] : set Event { e + e.^~po + e.^po }
+fun same_addr[e: Event] : set Event { e.address.~address }
+
+// 初始存储
+fun NonInit : set Event { Hart.start.*po }
+fun Init : set Event { Event - NonInit }
+fact { Init in StoreNormal }
+fact { Init->(MemoryEvent & NonInit) in ^gmo }
+fact { all e: NonInit | one e.*~po.~start }  // 每个事件都在一个 hart 中
+fact { all a: Address | one Init & a.~address } // 每个地址一个初始存储
+fact { no Init <: po and no po :> Init }
+....
+
+`  `
+
+....
+// po
+fact { acyclic[po] }
+
+// gmo
+fact { total[^gmo, MemoryEvent] } // gmo 是所有 MemoryEvents 的全序
+
+//rf
+fact { rf.~rf in iden } // 每次读取只返回一个写入的值
+fact { rf in Store <: address.~address :> Load }
+fun rfi : MemoryEvent->MemoryEvent { rf & (*po + *~po) }
+
+//dep
+fact { no StoreNormal <: (addrdep + ctrldep + datadep) }
+fact { addrdep + ctrldep + datadep + pair in ^po }
+fact { datadep in datadep :> Store }
+fact { ctrldep.*po in ctrldep }
+fact { no pair & (^po :> (LoadReserve + StoreConditional)).^po }
+fact { StoreConditional in LoadReserve.pair } // 假设所有 SC 都成功
+
+// rdw
+fun rdw : Event->Event {
+  (Load <: po_loc :> Load)  // 从所有 same_address load-load 对开始，
+  - (~rf.rf)                // 减去从相同存储读取的对，
+  - (po_loc.rfi)            // 并减去“fri-rfi”模式
+}
+
+// 过滤掉冗余实例和/或可视化
+fact { no gmo & gmo.gmo } // 保持可视化整洁
+fact { all a: Address | some a.~address }
+
+////////////////////////////////////////////////////////////////////////////////
+// =可选：操作码编码限制=
+
+// 允许的栅栏列表
+fact { Fence in
+  Fence.pr.sr
+  + Fence.pw.sw
+  + Fence.pr.pw.sw
+  + Fence.pr.sr.sw
+  + FenceTSO
+  + Fence.pr.pw.sr.sw
+}
+
+pred restrict_to_current_encodings {
+  no (LoadNormal + StoreNormal) & (Acquire + Release)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// =Alloy 快捷方式=
+pred acyclic[rel: Event->Event] { no iden & ^rel }
+pred total[rel: Event->Event, bag: Event] {
+  all disj e, e': bag | e->e' in rel + ~rel
+  acyclic[rel]
+}
+....

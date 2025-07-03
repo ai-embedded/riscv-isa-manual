@@ -1,0 +1,74 @@
+== “Q”扩展：四精度浮点，版本 2.2
+
+本章描述了 Q 标准扩展，用于符合 IEEE 754-2008 算术标准的 128 位四精度二进制浮点指令。四精度二进制浮点指令集扩展名为“Q”；它依赖于双精度浮点扩展 D。浮点寄存器现在扩展为可容纳单精度、双精度或四精度浮点值 (FLEN=128)。<<nanboxing>> 中描述的 NaN 装箱方案现在递归扩展，允许将单精度值 NaN 装箱到双精度值中，而双精度值本身又 NaN 装箱到四精度值中。
+
+=== 四精度加载和存储指令
+
+新增了 128 位版本的 LOAD-FP 和 STORE-FP 指令，使用 funct3 宽度字段的新值进行编码。
+
+include::images/wavedrom/quad-ls.edn[]
+[[quad-ls]]
+//.四精度加载和存储
+
+FLQ 和 FSQ 仅在有效地址自然对齐且 XLEN=128 时才保证原子执行。
+
+FLQ 和 FSQ 不修改正在传输的位；特别是，非规范 NaN 的有效载荷得以保留。
+
+=== 四精度计算指令
+
+大多数指令的格式字段中添加了新的支持格式，如 <<fpextfmt>> 所示。
+
+[[fpextfmt]]
+.格式字段编码。
+[%autowidth,float="center",align="center",cols="^,^,<",options="header",]
+|===
+|_fmt_ 字段 |助记符 |含义
+|00 |S |32 位单精度
+|01 |D |64 位双精度
+|10 |H |16 位半精度
+|11 |Q |128 位四精度
+|===
+
+四精度浮点计算指令的定义类似于其双精度对应指令，但对四精度操作数进行操作并产生四精度结果。
+
+include::images/wavedrom/quad-compute.edn[]
+[[quad-compute]]
+//.四精度计算
+
+=== 四精度转换和移动指令
+
+新增了浮点到整数和整数到浮点转换指令。这些指令的定义类似于双精度到整数和整数到双精度转换指令。FCVT.W.Q 或 FCVT.L.Q 将四精度浮点数分别转换为有符号 32 位或 64 位整数。FCVT.Q.W 或 FCVT.Q.L 将有符号 32 位或 64 位整数分别转换为四精度浮点数。FCVT.WU.Q、FCVT.LU.Q、FCVT.Q.WU 和 FCVT.Q.LU 变体转换为或从无符号整数值转换。FCVT.L[U].Q 和 FCVT.Q.L[U] 是 RV64 独有的指令。请注意，FCVT.Q.L[U] 总是产生精确结果，不受舍入模式影响。
+
+include::images/wavedrom/quad-cnvrt-mv.edn[]
+[[quad-cnvrt-mv]]
+//.四精度转换和移动
+
+新增了浮点到浮点转换指令。这些指令的定义类似于双精度浮点到浮点转换指令。FCVT.S.Q 或 FCVT.Q.S 将四精度浮点数转换为单精度浮点数，反之亦然。FCVT.D.Q 或 FCVT.Q.D 将四精度浮点数转换为双精度浮点数，反之亦然。
+
+include::images/wavedrom/quad-cnvt-interchange.edn[]
+[[quad-convert-interchange]]
+//.四精度转换和可互换移动
+
+浮点到浮点符号注入指令 FSGNJ.Q、FSGNJN.Q 和 FSGNJX.Q 的定义类似于双精度符号注入指令。
+
+include::images/wavedrom/quad-cnvrt-intch-xqqx.edn[]
+[[quad-cnvrt-intch-xqqx]]
+//.四精度转换和可互换移动 XQ-QX
+
+RV32 或 RV64 中不提供 FMV.X.Q 和 FMV.Q.X 指令，因此四精度位模式必须通过内存移动到整数寄存器。
+
+=== 四精度浮点比较指令
+
+四精度浮点比较指令的定义类似于其双精度对应指令，但对四精度操作数进行操作。
+
+include::images/wavedrom/quad-float-compare.edn[]
+[[quad-float-compare]]
+//.四精度浮点比较
+
+=== 四精度浮点分类指令
+
+四精度浮点分类指令 FCLASS.Q 的定义类似于其双精度对应指令，但对四精度操作数进行操作。
+
+include::images/wavedrom/quad-float-clssfy.edn[]
+[[quad-float-clssfy]]
+//.四精度浮点分类

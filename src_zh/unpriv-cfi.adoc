@@ -1,0 +1,539 @@
+== 控制流完整性 (CFI)
+
+控制流完整性 (CFI) 功能有助于防御面向返回编程 (ROP) 和调用/跳转面向编程 (COP/JOP) 风格的控制流颠覆攻击。这些攻击方法使用授权模块中的代码序列，其中序列中至少有一条指令是控制转移指令，该指令依赖于攻击者控制的数据，这些数据可能在返回栈中，也可能在用于获取调用或跳转目标地址的内存中。攻击者通过修改返回栈或用于获取跳转/调用目标地址的内存，将控制流指令（例如 `JALR`、`C.JR`、`C.JALR`）从其原始目标地址重定向到新目标，从而将这些序列拼接在一起。
+
+RV32/RV64 提供两种类型的控制转移指令——无条件跳转和条件分支。条件分支在指令的立即数字段中编码偏移量，因此是直接分支，不易受控制流颠覆的影响。使用 `JAL` 的无条件直接跳转将控制权转移到距当前 `pc` ±1 MiB 范围内的目标。使用 `JALR` 的无条件间接跳转通过将指令中编码的符号扩展 12 位立即数添加到 `rs1` 寄存器来获取其分支目标。
+
+RV32I/RV64I 没有用于调用过程或从过程返回的专用指令。`JAL` 或 `JALR` 可用于执行过程调用，`JALR` 用于从过程返回。然而，RISC-V ABI 定义了约定，即 `rd`（即链接寄存器）为 `x1` 或 `x5` 的 `JAL`/`JALR` 是过程调用，而 `rs1` 为常规链接寄存器（即 `x1` 或 `x5`）的 `JALR` 是从过程返回。该架构允许使用这些提示和约定来支持返回地址预测（参见 <<rashints>>）。
+
+RVC 压缩指令标准扩展提供了无条件跳转和条件分支指令。`C.J` 和 `C.JAL` 指令在指令的立即数字段中编码偏移量，因此不易受控制流颠覆的影响。`C.JR` 和 `C.JALR` RVC 指令执行到寄存器 `rs1` 中地址的无条件控制转移。`C.JALR` 额外将跳转后指令的地址 (`pc+2`) 写入链接寄存器 `x1`，并且是过程调用。如果 `rs1` 是常规链接寄存器（即 `x1` 或 `x5`），则 `C.JR` 是从过程返回；否则它是间接跳转。
+
+术语 _call_ 用于指代 `JAL` 或 `JALR` 指令，其目标是链接寄存器，即 _rd_≠`x0`。通常，链接寄存器是 `x1` 或 `x5`。使用 `JAL` 或 `C.JAL` 的 _call_ 称为直接调用。`C.JALR` 扩展为 `JALR x1, 0(rs1)`，并且是 _call_。使用 `JALR` 或 `C.JALR` 的 _call_ 称为 _间接调用_。
+
+术语 _return_ 用于指代 `JALR` 指令，其中 _rd_=`x0` 且 _rs1_=`x1` 或 _rs1_=`x5`。`C.JR` 指令扩展为 `JALR x0, 0(rs1)`，如果 _rs1_=`x1` 或 _rs1_=`x5`，则它是 _return_。
+
+术语 _indirect-jump_ 用于指代 `JALR` 指令，其中 _rd_=`x0` 且 _rs1_ 不是 `x1` 或 `x5`（即，不是返回）。`C.JR` 指令，其中 _rs1_ 不是 `x1` 或 `x5`（即，不是返回），是 _indirect-jump_。
+
+Zicfiss 和 Zicfilp 扩展基于这些约定和提示，分别提供后向边和前向边控制流完整性。
+
+Zicfilp 扩展的非特权 ISA 在 <<unpriv-forward>> 中指定，Zicfiss 扩展的非特权 ISA 在 <<unpriv-backward>> 中指定。这些扩展的特权 ISA 在特权 ISA 规范中指定。
+
+[[unpriv-forward]]
+=== 着陆垫 (Zicfilp)
+
+为了强制执行前向边控制流完整性，Zicfilp 扩展引入了着陆垫 (`LPAD`) 指令。`LPAD` 指令必须放置在间接跳转或调用的有效目标程序位置。`LPAD` 指令（参见 <<LP_INST>>）使用 `AUIPC` 主操作码编码，其中 _rd_=`x0`。
+
+编译器将着陆垫指令作为地址已知的函数的第一个指令，以及任何间接跳转目标。对于仅使用直接调用或直接跳转到达的函数，不需要着陆垫指令。
+
+着陆垫旨在为使用间接调用和跳转执行的控制转移提供完整性，这被称为前向边保护。当 Zicfilp 处于活动状态时，hart 跟踪一个预期着陆垫 (`ELP`) 状态，该状态由 _间接调用_ 或 _间接跳转_ 更新，以要求在分支目标处有一个着陆垫指令。如果目标处的指令不是着陆垫，则会引发软件检查异常。
+
+着陆垫可以选择性地与 20 位标签关联。启用标签后，可以使用基于编程语言的策略定义从间接调用或跳转站点可以到达的着陆垫数量。着陆垫的标签使软件能够更精确地将间接调用/跳转站点与有效目标配对。当使用着陆垫标签时，间接调用或间接跳转站点可以指定预期的着陆垫标签，从而限制程序中每个间接调用或间接跳转站点可以到达的着陆垫集。
+
+最简单的形式是，程序可以构建一个单一标签值，以实现粗粒度前向边控制流完整性。通过限制小工具必须以着陆垫指令开头，该指令标记间接可调用函数的开始，程序可以显著减少可用小工具空间。第二种标签生成形式可以生成签名，例如 MAC，使用函数的原型。使用这种方法的程序将进一步限制从调用站点可访问的小工具，仅限于与被调用函数原型匹配的间接可调用函数。另一种标签生成方法涉及分析程序的控制流图 (CFG)，这可以对可到达小工具集施加更严格的约束。此类程序可以进一步为每个函数使用多个标签，这意味着如果一个函数从两个或更多调用站点调用，则该函数可以标记为可从每个调用站点到达。例如，考虑两个调用站点 A 和 B，其中 A 调用函数 X 和 Y，B 调用函数 Y 和 Z。在单一标签方案中，函数 X、Y 和 Z 需要分配相同的标签，以便调用站点 A 和 B 都可以调用公共函数 Y。此方案将允许调用站点 A 也调用函数 Z，调用站点 B 也调用函数 X。然而，如果函数 Y 被分配了两个标签——一个对应于调用站点 A，另一个对应于调用站点 B，则 Y 可以由两个调用站点调用，但 X 只能由调用站点 A 调用，Z 只能由调用站点 B 调用。为了支持多个标签，编译器可以为共享函数生成一个特定于调用站点的入口点，每个入口点都有自己的着陆垫指令，后跟直接分支到函数的开始。这将允许函数标记多个标签，每个标签对应一个特定的调用站点。标签空间的一部分可以专门用于标记的着陆垫，这些着陆垫仅是间接跳转（而不是间接调用）的有效目标。
+
+`LPAD` 指令使用 `AUIPC` 主操作码中定义为 HINT 的代码点，其中 _rd_=`x0`。当 Zicfilp 在特权级别不活动或未实现该扩展时，着陆垫指令作为空操作执行。因此，使用 `LPAD` 指令构建的程序可以在不支持 Zicfilp 扩展或 Zicfilp 扩展不活动的处理器上继续正常运行，但没有前向边控制流完整性。
+
+编译器和链接器应提供一个属性标志，以指示程序是否已使用 Zicfilp 扩展编译，并使用该标志来确定是否应激活 Zicfilp 扩展。动态加载器应仅在应用程序使用的所有可执行文件（应用程序和依赖的动态链接库）都使用 Zicfilp 扩展时才激活应用程序的 Zicfilp 扩展。
+
+当 Zicfilp 扩展不活动或未实现时，hart 不要求在间接调用/跳转的目标处有着陆垫指令，并且着陆指令恢复为空操作。这允许使用着陆垫指令编译的程序正常运行，但没有前向边控制流完整性。
+
+Zicfilp 扩展可以为每个特权模式单独且独立地激活使用。
+
+Zicfilp 扩展依赖于 Zicsr 扩展。
+
+==== 着陆垫强制执行
+
+为了强制间接调用或间接跳转的目标必须是有效的着陆垫指令，hart 维护一个预期着陆垫 (`ELP`) 状态，以确定间接调用或间接跳转的目标是否需要着陆垫指令。`ELP` 状态可以是以下之一：
+
+* 0 - `NO_LP_EXPECTED`
+* 1 - `LP_EXPECTED`
+
+`ELP` 状态在复位时由 hart 初始化为 `NO_LP_EXPECTED`。
+
+Zicfilp 扩展在启用时，确定间接调用或间接跳转是否必须落在着陆垫上，如 <<IND_CALL_JMP>> 中指定。如果 `is_lp_expected` 为 1，则 hart 将 `ELP` 更新为 `LP_EXPECTED`。
+
+[[IND_CALL_JMP]]
+.着陆垫预期确定
+[listing]
+----
+  is_lp_expected = ( (JALR || C.JR || C.JALR) &&
+                     (rs1 != x1) && (rs1 != x5) && (rs1 != x7) ) ? 1 : 0;
+----
+
+使用 `JALR`、`C.JALR` 或 `C.JR` 且 `rs1` 为 `x7` 的间接分支被称为软件保护分支。此类分支不需要落在 `LPAD` 指令上，因此不会将 `ELP` 设置为 `LP_EXPECTED`。
+
+[NOTE]
+====
+当寄存器源是链接寄存器且寄存器目标是 `x0` 时，它是从过程返回，并且不需要在目标处有着陆垫。
+
+当寄存器源和寄存器目标都是链接寄存器时，它是一个语义上的直接调用。例如，`call offset` 伪指令可以扩展为由 `lui ra, imm20` 或 `auipc ra, imm20` 指令后跟 `jalr ra, imm12(ra)` 指令组成的两条指令序列，其中 `ra` 是链接寄存器（`x1` 或 `x5`）。由于过程的地址未明确获取，并且计算出的地址不是从可变内存中获取的，因此此类语义上的直接调用不需要在目标处放置着陆垫。编译器和 JITer 必须仅在 `rs1` 计算为 PC 相对或符号的绝对偏移量时才使用语义上的直接调用。
+
+用于尾调用远距离过程的 `tail offset` 伪指令也可以扩展为由 `lui x7, imm20` 或 `auipc x7, imm20` 后跟 `jalr x0, x7` 组成的两条指令序列。由于过程的地址未明确获取，并且计算出的地址不是从可变内存中获取的，因此此类语义上的直接尾调用不需要在目标处放置着陆垫。
+
+软件保护分支也可以由编译器用于为 switch-case 等构造生成代码。使用软件保护分支时，编译器需要确保它完全控制可能的跳转目标（例如，通过从内存中的只读表获取目标并对表中的索引执行边界检查等）。
+====
+
+着陆垫可以标记。Zicfilp 扩展指定寄存器 `x7` 用作着陆垫标签寄存器。为了支持标记的着陆垫，间接调用/跳转站点在 `x7` 寄存器的 31:12 位中建立一个预期着陆垫标签（例如，使用 `LUI` 指令）。`LPAD` 指令编码一个 20 位立即数，称为着陆垫标签 (`LPL`)，它与预期着陆垫标签匹配。当 `LPL` 编码为零时，`LPAD` 指令不执行标签检查，并且在此单一标签操作模式下构建的程序中，间接调用/跳转站点不需要在 `x7` 中建立预期着陆垫标签值。
+
+当 `ELP` 设置为 `LP_EXPECTED` 时，如果指令流中的下一条指令未对齐 4 字节，或者不是 `LPAD`，或者如果 `LPAD` 中编码的着陆垫标签非零且与 `x7` 寄存器 31:12 位中的预期着陆垫标签不匹配，则会引发软件检查异常（原因=18），其中 `__x__tval` 设置为“着陆垫故障 (code=2)”，否则 `ELP` 更新为 `NO_LP_EXPECTED`。
+
+[NOTE]
+====
+`ELP` 的跟踪以及间接调用和跳转目标处需要着陆垫指令的要求，使得处理器实现能够显著减少或防止推测到非着陆垫指令。使用此技术约束推测，大大减少了小工具空间，并增加了使用分支目标注入（也称为 Spectre 变体 2）等技术通过侧信道泄露数据的难度，这些技术使用推测执行来泄露数据。
+
+`LPAD` 需要 4 字节对齐，以解决程序中两条指令 `A` 和 `B` 意外形成非预期着陆垫的情况。例如，考虑一条 32 位指令，其中字节 3 和 2 具有 `?017h` 模式（例如，`LUI`、`AUIPC` 或 `JAL` 指令的立即数字段），后跟一条 16 位或 32 位指令。当检测到可能意外形成有效着陆垫的模式时，汇编器或链接器可以强制指令 `A` 对齐到 4 字节边界，以强制非预期 `LPAD` 模式变为未对齐，从而使其不是有效的着陆垫，或者可以使用替代寄存器分配来防止意外着陆垫。
+====
+
+<<<
+
+[[LP_INST]]
+==== 着陆垫指令
+
+当 Zicfilp 启用时，`LPAD` 是 `ELP` 状态为 `LP_EXPECTED` 时唯一允许执行的指令。如果 Zicfilp 未启用，则该指令为空操作。如果 Zicfilp 启用，则 `LPAD` 指令会导致软件检查异常，其中 `__x__tval` 设置为“着陆垫故障 (code=2)”，如果满足以下任何条件：
+
+* `pc` 未对齐 4 字节且 `ELP` 为 `LP_EXPECTED`。
+* `ELP` 为 `LP_EXPECTED` 且 `LPL` 非零且 `LPL` 与 `x7` 寄存器 31:12 位中的预期着陆垫标签不匹配。
+
+如果未引发软件检查异常，则 `ELP` 更新为 `NO_LP_EXPECTED`。
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  7, name: 'opcode', attr:'AUIPC'},
+  {bits:  5, name: 'rd', attr:['00000']},
+  {bits: 20, name: 'LPL'},
+], config:{lanes: 1, hspace:1024}}
+....
+
+`LPAD` 指令的操作如下：
+
+.`LPAD` 操作
+[listing]
+----
+if (xLPE == 1 && ELP == LP_EXPECTED)
+    // 如果 PC 未对齐 4 字节，则引发软件检查异常
+    if pc[1:0] != 0
+        raise software-check exception
+    // 如果着陆垫标签不匹配 -> 引发软件检查异常
+    else if (inst.LPL != x7[31:12] && inst.LPL != 0)
+        raise software-check exception
+    else
+        ELP = NO_LP_EXPECTED
+else
+    no-op
+endif
+----
+
+<<<
+
+[[unpriv-backward]]
+=== 影子栈 (Zicfiss)
+
+Zicfiss 扩展引入了影子栈以强制执行后向边控制流完整性。影子栈是第二个栈，用于存储链接寄存器中返回地址的影子副本，如果需要溢出的话。
+
+影子栈旨在为使用 _return_ 执行的控制转移提供完整性，其中返回可能来自使用间接调用或直接调用调用的过程，这被称为后向边保护。
+
+使用后向边控制流完整性的程序有两个栈：一个常规栈和一个影子栈。影子栈用于溢出链接寄存器（如果需要），由非叶函数使用。架构中引入了一个额外的寄存器，影子栈指针 (`ssp`)，用于保存活动影子栈顶部的地址。
+
+影子栈与常规栈类似，向下增长，从高地址到低地址。影子栈上的每个条目都宽 `XLEN`，并保存链接寄存器值。`ssp` 指向影子栈的顶部，即存储在影子栈上的最后一个元素的地址。
+
+影子栈在架构上受到保护，免受意外损坏和修改，如特权规范中详细说明。
+
+Zicfiss 扩展提供了将链接寄存器存储和加载到/从影子栈的指令，以及检查返回地址完整性的指令。该扩展提供了支持常见栈维护操作（如栈展开和栈切换）的指令。
+
+当 Zicfiss 启用时，每个需要溢出链接寄存器的函数（通常是非叶函数）在函数进入时（序言）将链接寄存器值存储到常规栈，并将链接寄存器值的影子副本存储到影子栈。当此类函数返回时（尾声），函数从常规栈加载链接寄存器，并从影子栈加载链接寄存器的影子副本。然后，比较常规栈中的链接寄存器值和影子栈中的影子链接寄存器值。如果两个值不匹配，则表示返回地址控制变量被颠覆，并导致软件检查异常。
+
+Zicfiss 指令，除了 `SSAMOSWAP.W/D`，都使用 Zimop 和 Zcmop 扩展定义的 May-Be-Operation 指令子集进行编码。
+当未实现 Zicfiss 扩展或未激活该扩展时，此指令子集将恢复其 Zimop/Zcmop 定义的行为。因此，使用 Zicfiss 指令构建的程序可以在不支持 Zicfiss 扩展或 Zicfiss 扩展不活动的处理器上继续正常运行，但没有后向边控制流完整性。Zicfiss 扩展可以为每个特权模式单独且独立地激活使用。
+
+编译器应标记每个目标文件（例如，使用 ELF 属性中的标志），以指示目标文件是否已使用 Zicfiss 指令编译。链接器应标记（例如，使用 ELF 属性中的标志）通过链接对象生成的二进制/可执行文件，仅当所有链接的目标文件都具有相同的 Zicfiss 属性时，才表示已使用 Zicfiss 指令编译。
+
+动态加载器应仅在应用程序使用的所有可执行文件（应用程序和依赖的动态链接库）都使用 Zicfiss 扩展时才激活应用程序的 Zicfiss 扩展。
+
+<<<
+
+活动 Zicfiss 扩展的应用程序可以在运行时请求动态加载器加载新的动态共享对象（例如使用 dlopen()）。如果请求的对象没有 Zicfiss 属性，则动态加载器根据其策略（例如，由操作系统或管理员建立）配置，可以拒绝请求或为应用程序停用 Zicfiss 扩展。强烈建议该策略强制执行严格的安全态势并拒绝请求。
+
+Zicfiss 扩展依赖于 Zicsr 和 Zimop 扩展。此外，如果实现了 Zcmop 扩展，Zicfiss 扩展还提供了 `C.SSPUSH` 和 `C.SSPOPCHK` 指令。此外，在 U 模式下使用 Zicfiss 需要实现 S 模式。不支持在 M 模式下使用 Zicfiss。
+
+==== Zicfiss 指令摘要
+
+Zicfiss 扩展引入了以下指令：
+
+* 推入影子栈（参见 <<SS_PUSH>>）
+** `SSPUSH x1` 和 `SSPUSH x5` - 使用 `MOP.RR.7` 编码
+** `C.SSPUSH x1` - 使用 `C.MOP.1` 编码
+
+* 从影子栈弹出（参见 <<SS_POP>>）
+** `SSPOPCHK x1` 和 `SSPOPCHK x5` - 使用 `MOP.R.28` 编码
+** `C.SSPOPCHK x5` - 使用 `C.MOP.5` 编码
+
+* 将 `ssp` 的值读入寄存器（参见 <<SSP_READ>>）
+** `SSRDP` - 使用 `MOP.R.28` 编码
+
+* 从影子栈位置执行原子交换（参见 <<SSAMOSWAP>>）
+** `SSAMOSWAP.W` 和 `SSAMOSWAP.D`
+
+Zicfiss 不使用 `MOP.RR.7` 或 `MOP.R.28` 的所有编码。当 Zicfiss 扩展不使用 `MOP.RR.7` 或 `MOP.R.28` 编码时，相应的指令遵循其 Zimop 定义的行为，除非被其他扩展重新定义。
+
+==== 影子栈指针 (`ssp`)
+
+`ssp` CSR 是一个非特权读写 (URW) CSR，它读取和写入影子栈指针 (`ssp`) 的 `XLEN` 低位。CSR 地址是 0x011。没有定义高位 CSR，因为 `ssp` 的宽度始终与当前特权模式的 `XLEN` 相同。`ssp` 的位 1:0 是只读零。如果 UXLEN 或 SXLEN 永远不能为 32，则位 2 也是只读零。
+
+<<<
+
+==== Zicfiss 指令
+
+[[SS_PUSH]]
+==== 推入影子栈
+影子栈推入操作定义为 `ssp` 减去 `XLEN/8`，然后将链接寄存器中的值存储到影子栈新顶部的内存中。
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  7, name: 'opcode', attr:'SYSTEM'},
+  {bits:  5, name: 'rd', attr:['00000']},
+  {bits:  3, name: 'funct3', attr:['100']},
+  {bits:  5, name: 'rs1', attr:['00000']},
+  {bits:  5, name: 'rs2', attr:['00001', '00101']},
+  {bits:  7, name: '1100111', attr:['SSPUSH x1','SSPUSH x5']},
+], config:{lanes: 1, hspace:1024}}
+....
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  2, name: 'op', attr:'C1'},
+  {bits:  5, name: '00000'},
+  {bits:  1, name: '1'},
+  {bits:  3, name: 'n[3:1]', attr:['000']},
+  {bits:  1, name: '0'},
+  {bits:  1, name: '0'},
+  {bits:  3, name: '011', attr:['C.SSPUSH x1']},
+], config:{lanes: 1, hspace:1024}}
+....
+
+`SSPUSH` 仅支持 `x1` 和 `x5` 寄存器作为 `rs2`。Zicfiss 使用 Zcmop 定义的 `C.MOP.1` 编码提供了 `SSPUSH x1` 指令的 16 位版本。`C.SSPUSH x1` 扩展为 `SSPUSH x1`。
+
+`SSPUSH` 指令及其压缩形式 `C.SSPUSH` 可用于将链接寄存器推入影子栈。`SSPUSH` 和 `C.SSPUSH` 指令执行存储的方式与现有存储指令相同，不同之处在于基址隐式为 `ssp`，宽度隐式为 `XLEN`。
+
+`SSPUSH` 和 `C.SSPUSH` 指令的操作如下：
+
+.`SSPUSH` 和 `C.SSPUSH` 操作
+[listing]
+----
+if (xSSE == 1)
+    mem[ssp - (XLEN/8)] = X(src)  # 将 src 值存储到 ssp - XLEN/8
+    ssp = ssp - (XLEN/8)          # ssp 减去 XLEN/8
+endif
+----
+
+`SSPUSH` 和 `C.SSPUSH` 仅在存储到影子栈成功完成时才递减 `ssp`。
+
+<<<
+
+[[SS_POP]]
+==== 从影子栈弹出
+
+影子栈弹出操作定义为从影子栈当前顶部读取 `XLEN` 宽度的值，然后 `ssp` 增加 `XLEN/8`。
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  7, name: 'opcode', attr:'SYSTEM'},
+  {bits:  5, name: 'rd',  attr:['00000','00000']},
+  {bits:  3, name: 'funct3', attr:['100']},
+  {bits:  5, name: 'rs1', attr:['00001','00101']},
+  {bits: 12, name: '110011011100', attr:['SSPOPCHK x1','SSPOPCHK x5']},
+], config:{lanes: 1, hspace:1024}}
+....
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  2, name: 'op', attr:'C1'},
+  {bits:  5, name: '00000'},
+  {bits:  1, name: '1'},
+  {bits:  3, name: 'n[3:1]', attr:['010']},
+  {bits:  1, name: '0'},
+  {bits:  1, name: '0'},
+  {bits:  3, name: '011', attr:['C.SSPOPCHK x5']},
+], config:{lanes: 1, hspace:1024}}
+....
+
+`SSPOPCHK` 仅支持 `x1` 和 `x5` 寄存器作为 `rs1`。Zicfiss 使用 Zcmop 定义的 `C.MOP.5` 编码提供了 `SSPOPCHK x5` 的 16 位版本。`C.SSPOPCHK x5` 扩展为 `SSPOPCHK x5`。
+
+具有影子栈的程序在非叶函数的序言中将返回地址推入常规栈和影子栈。当从这些非叶函数返回时，此类程序从常规栈弹出链接寄存器，并从影子栈弹出链接寄存器的影子副本。然后，比较这两个值。如果值不匹配，则表示常规栈上的返回地址变量已损坏。
+
+`SSPOPCHK` 指令及其压缩形式 `C.SSPOPCHK` 可用于从影子栈弹出影子返回地址值，并检查该值是否与链接寄存器内容匹配，如果不匹配则引发软件检查异常，其中 `__x__tval` 设置为“影子栈故障 (code=3)”。
+
+虽然任何寄存器都可以用作链接寄存器，但通常使用 `x1` 或 `x5` 寄存器。影子栈指令设计为在 `x1` 和 `x5` 寄存器用作链接寄存器时效率最高。
+
+[NOTE]
+====
+返回地址预测栈是高性能指令获取单元的常见功能，但它们需要准确检测用于过程调用和返回的指令才能有效。对于 RISC-V，关于指令用法的提示通过使用的寄存器编号隐式编码。推入和/或弹出 RAS 的返回地址栈 (RAS) 操作在 <<rashints>> 中指定。
+
+使用 `x1` 或 `x5` 作为链接寄存器允许程序受益于返回地址预测栈。此外，由于影子栈指令是围绕使用 `x1` 或 `x5` 作为链接寄存器设计的，因此使用任何其他寄存器作为链接寄存器将导致额外的寄存器移动开销。
+
+编译器在生成具有后向边 CFI 的代码时，必须保护链接寄存器（例如 `x1` 和/或 `x5`）免受任意修改，方法是不发出不安全的代码序列。
+====
+
+[NOTE]
+====
+将返回地址存储在两个栈上可以保留调用栈布局和 ABI，同时还可以检测常规栈上返回地址的损坏。使用影子栈的非叶函数的序言和尾声如下：
+
+[listing]
+----
+    function_entry:
+        addi sp,sp,-8  # 推入链接寄存器 x1
+        sd x1,(sp)     # 到常规栈
+        sspush x1      # 推入链接寄存器 x1 到影子栈
+         :
+        ld x1,(sp)     # 从常规栈弹出链接寄存器 x1
+        addi sp,sp,8
+        sspopchk x1    # 如果 x1 不等于影子返回地址则故障
+                       # 返回地址
+        ret
+----
+
+此示例说明了使用 `x1` 寄存器作为链接寄存器。或者，`x5` 寄存器也可以用作链接寄存器。
+
+叶函数（不进行函数调用的函数）不需要溢出链接寄存器。因此，在叶函数执行期间，返回值可以保存在链接寄存器本身中。
+====
+
+`C.SSPOPCHK` 和 `SSPOPCHK` 指令执行加载的方式与现有加载指令相同，不同之处在于基址隐式为 `ssp`，宽度隐式为 `XLEN`。
+
+`SSPOPCHK` 和 `C.SSPOPCHK` 指令的操作如下：
+
+.`SSPOPCHK` 和 `C.SSPOPCHK` 操作
+[listing]
+----
+if (xSSE == 1)
+    temp = mem[ssp]            # 从 ssp 中的地址加载 temp
+    if temp != X(src)          # 比较 temp 与 src 中的值
+                               # 如果它们不按位相等，则引发软件检查异常。
+                               # 只有 x1 和 x5 可以用作 src
+       raise software-check exception
+    else
+       ssp = ssp + (XLEN/8)    # ssp 增加 XLEN/8。
+    endif
+endif
+----
+
+如果从 `ssp` 中的地址加载的值与 `rs1` 中的值不匹配，则会引发软件检查异常（原因=18），其中 `__x__tval` 设置为“影子栈故障 (code=3)”。`SSPOPCHK`/`C.SSPOPCHK` 引起的软件检查异常的优先级低于加载/存储/AMO 访问故障异常。
+
+`SSPOPCHK` 和 `C.SSPOPCHK` 仅在从影子栈加载成功完成且未引发软件检查异常时才递增 `ssp`。
+
+<<<
+
+[NOTE]
+====
+使用压缩指令 `C.SSPUSH x1` 推入影子栈在 ABI 使用 `x1` 作为链接寄存器时效率最高，因为链接寄存器可以在函数序言中无需寄存器到寄存器移动即可推入。要使用压缩指令 `C.SSPOPCHK x5`，函数应将返回地址从常规栈弹出到备用链接寄存器 `x5`，并使用 `C.SSPOPCHK x5` 将返回地址与存储在影子栈上的影子副本进行比较。然后函数使用 `C.JR x5` 跳转到返回地址。
+
+[listing]
+----
+    function_entry:
+        c.addi sp,sp,-8  # 推入链接寄存器 x1
+        c.sd x1,(sp)     # 到常规栈
+        c.sspush x1      # 推入链接寄存器 x1 到影子栈
+         :
+        c.ld x5,(sp)     # 从常规栈弹出链接寄存器 x5
+        c.addi sp,sp,8
+        c.sspopchk x5    # 如果 x5 不等于影子返回地址则故障
+        c.jr x5
+----
+
+====
+
+[NOTE]
+====
+存储到加载转发是高性能处理器实现中常用的技术。Zicfiss 实现可能会阻止从非影子栈存储到 `SSPOPCHK` 或 `C.SSPOPCHK` 指令的转发。如果对映射为影子栈的页面进行非影子栈存储，则会导致故障。然而，这种确定可能会延迟到 PTE 被检查之后，因此可以用于暂时将数据从此类存储转发到 `SSPOPCHK` 或 `C.SSPOPCHK`。
+====
+
+<<<
+
+[[SSP_READ]]
+==== 将 `ssp` 读入寄存器
+
+`SSRDP` 指令用于将 `ssp` 的内容移动到目标寄存器。
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  7, name: 'opcode', attr:'SYSTEM'},
+  {bits:  5, name: 'rd', attr:['dst']},
+  {bits:  3, name: 'funct3', attr:['100']},
+  {bits:  5, name: '00000'},
+  {bits: 12, name: '110011011100', attr:['SSRDP']},
+], config:{lanes: 1, hspace:1024}}
+....
+
+`SSRDP` 不支持将 _rd_ 编码为 `x0`。
+
+`SSRDP` 指令的操作如下：
+
+.`SSRDP` 操作
+[listing]
+----
+if (xSSE == 1)
+    X(dst) = ssp
+else
+    X(dst) = 0
+endif
+----
+
+[NOTE]
+====
+Zimop 将 0 写入 `rd` 的属性（当使用 Zimop 的扩展未实现或不活动时）可用于确定 Zicfiss 扩展是否活动。例如，展开影子栈的函数可以通过动态检测 Zicfiss 扩展是否活动来跳过展开操作。
+
+可以使用以下示例序列：
+
+[listing]
+    ssrdp t0                      # 将 ssp 移动到 t0
+    beqz t0, zicfiss_not_active   # 按照约定，零不是有效的影子栈指针
+    # Zicfiss 处于活动状态
+    :
+    :
+zicfiss_not_active:
+
+为了帮助使用此类代码序列，操作系统和运行时不得将影子栈放置在地址 0 处。
+====
+
+<<<
+
+[NOTE]
+====
+栈上执行的常见操作是展开栈以支持 `setjmp`/`longjmp`、C++ 异常处理等构造。使用影子栈的程序除了存储数据的栈之外，还必须展开影子栈。
+展开函数必须验证它不会意外地展开超出影子栈的边界。影子栈预计将使用保护页在两端进行边界限制。栈的保护页是栈所有者进程无法访问的页面。为了检测展开是否超出影子栈的边界，展开可以以最大 4 KiB 的增量进行，测试 `ssp` 是否仍指向影子栈页面或已展开到保护页中。以下示例说明了使用影子栈指令展开影子栈。此示例假定 `setjmp` 函数本身不会推入影子栈（作为叶函数，它不需要推入）。
+
+[listing]
+setjmp() {
+    :
+    :
+    // 读取并将影子栈指针保存到 jmp_buf
+    asm("ssrdp %0" : "=r"(cur_ssp):);
+    jmp_buf->saved_ssp = cur_ssp;
+    :
+    :
+}
+longjmp() {
+    :
+    // 读取当前影子栈指针并
+    // 计算要展开的调用帧数
+    asm("ssrdp %0" : "=r"(cur_ssp):);
+    // 如果后向边 CFI 不活动，则跳过展开
+    asm("beqz %0, back_cfi_not_active" : "=r"(cur_ssp):);
+    // 在循环中展开帧
+    while ( jmp_buf->saved_ssp > cur_ssp ) {
+        // 每次最多前进 4K，以避免
+        // 展开超出影子栈的边界
+        cur_ssp = ( (jmp_buf->saved_ssp - cur_ssp) >= 4096 ) ?
+                  (cur_ssp + 4096) : jmp_buf->saved_ssp;
+        asm("csrw ssp, %0" : :  "r" (cur_ssp));
+        // 测试是否展开超出影子栈边界
+        asm("sspush x5");
+        asm("sspopchk x5");
+    }
+back_cfi_not_active:
+    :
+}
+====
+
+<<<
+
+[[SSAMOSWAP]]
+==== 从影子栈位置原子交换
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  7, name: 'opcode', attr:'AMO'},
+  {bits:  5, name: 'rd', attr:'dest'},
+  {bits:  3, name: 'funct3', attr:['010', '011']},
+  {bits:  5, name: 'rs1', attr:'addr'},
+  {bits:  5, name: 'rs2', attr:'src'},
+  {bits:  1, name: 'rl'},
+  {bits:  1, name: 'aq'},
+  {bits:  5, name: '01001', attr:['SSAMOSWAP.W', 'SSAMOSWAP.D']},
+], config:{lanes: 1, hspace:1024}}
+....
+
+对于 RV32，`SSAMOSWAP.W` 原子地从 `rs1` 中影子栈位置的地址加载 32 位数据值，将加载的值放入寄存器 `rd`，并将 `rs2` 中保存的 32 位值存储到 `rs1` 中的原始地址。`SSAMOSWAP.D`（仅 RV64）类似于 `SSAMOSWAP.W`，但操作 64 位数据值。
+
+.`SSAMOSWAP.W` 用于 RV32 和 `SSAMOSWAP.D`（仅 RV64）操作
+[listing]
+----
+  if privilege_mode != M && menvcfg.SSE == 0
+      raise illegal-instruction exception
+  else if S-mode not implemented
+      raise illegal-instruction exception
+  else if privilege_mode == U && senvcfg.SSE == 0
+      raise illegal-instruction exception
+  else if privilege_mode == VS && henvcfg.SSE == 0
+      raise virtual-instruction  exception
+  else if privilege_mode == VU && senvcfg.SSE == 0
+      raise virtual-instruction  exception
+  else
+      X(rd) = mem[X(rs1)]
+      mem[X(rs1)] = X(rs2)
+  endif
+----
+
+对于 RV64，`SSAMOSWAP.W` 原子地从 `rs1` 中影子栈位置的地址加载 32 位数据值，符号扩展加载的值并将其放入 `rd`，并将 `rs2` 中保存的低 32 位值存储到 `rs1` 中的原始地址。
+
+.`SSAMOSWAP.W` 用于 RV64
+[listing]
+----
+  if privilege_mode != M && menvcfg.SSE == 0
+      raise illegal-instruction exception
+  else if S-mode not implemented
+      raise illegal-instruction exception
+  else if privilege_mode == U && senvcfg.SSE == 0
+      raise illegal-instruction exception
+  else if privilege_mode == VS && henvcfg.SSE == 0
+      raise virtual-instruction  exception
+  else if privilege_mode == VU && senvcfg.SSE == 0
+      raise virtual-instruction  exception
+  else
+      temp[31:0] = mem[X(rs1)]
+      X(rd) = SignExtend(temp[31:0])
+      mem[X(rs1)] = X(rs2)[31:0]
+  endif
+----
+
+就像 A 扩展中的 AMO 一样，`SSAMOSWAP.W/D` 要求 `rs1` 中保存的地址自然对齐到操作数的大小（即，双字为八字节对齐，字为四字节对齐）。如果地址未自然对齐，则适用相同的异常选项。
+
+就像 A 扩展中的 AMO 一样，`SSAMOSWAP.W/D` 可选地提供释放一致性语义，使用 `aq` 和 `rl` 位，以帮助实现多处理器同步。`SSAMOSWAP.W/D` 操作如果 `aq=1` 则具有获取语义，如果 `rl=1` 则具有释放语义。
+
+[NOTE]
+====
+栈切换是用户程序和 supervisor 程序中常见的操作。执行栈切换时，当前活动栈的栈指针保存到上下文数据结构中，并通过从上下文数据结构加载新的栈指针来激活新栈。
+
+当影子栈对程序处于活动状态时，程序需要额外切换影子栈指针。如果停用影子栈顶部的指针保存在上下文数据结构中，则它可能容易受到内存损坏漏洞的影响。为了保护指针值，程序可以将其存储在停用影子栈的顶部，从而创建检查点。合法检查点定义为保存值为 `X` 的检查点，其中 `X` 是检查点在影子栈上的地址。
+====
+
+[NOTE]
+====
+从新影子栈恢复影子栈指针并将旧影子栈指针保存到旧影子栈的示例序列如下：
+
+[listing]
+----
+# a0 保存要切换到的新影子栈顶部的指针
+stack_switch:
+   ssrdp ra
+   beqz ra, 2f                    # 如果 Zicfiss 不活动则跳过
+   ssamoswap.d ra, x0,  (a0)      # ra=*[a0] 且 *[a0]=0
+   beq         ra, a0,  1f        # [a0] 必须 == [ra]
+   unimp                          # 否则崩溃
+1: addi        ra, ra,  XLEN/8    # 弹出检查点
+   csrrw       ra, ssp, ra        # 交换 ssp：ra=ssp, ssp=ra
+   addi        ra, ra,  -(XLEN/8) # 检查点 = “旧 ssp - XLEN/8”
+   ssamoswap.d x0, ra,  (ra)      # 在“旧 ssp - XLEN/8”处保存检查点
+2:
+----
+
+此序列使用 `ra` 寄存器。如果执行此序列的特权模式可以被中断，则陷阱处理程序应将 `ra` 保存到影子栈本身。在那里，它受到保护，免受篡改，并且可以在从陷阱返回之前恢复。
+
+当 supervisor 创建新的影子栈时，它需要在该栈的最高地址处存储一个检查点。这使得可以使用本注释中概述的过程切换影子栈指针。
+`SSAMOSWAP.W/D` 指令可用于存储此检查点。当 `SSAMOSWAP.W/D` 操作的内存位置的旧值不需要时，`rd` 可以设置为 `x0`。
+====

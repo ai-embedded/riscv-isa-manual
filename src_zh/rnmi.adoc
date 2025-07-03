@@ -1,0 +1,102 @@
+[[rnmi]]
+== “Smrnmi”扩展：可恢复的不可屏蔽中断，版本 1.0
+
+基本机器级架构仅支持不可恢复的不可屏蔽中断 (UNMI)，其中 NMI 跳转到机器模式下的处理程序，覆盖当前的 `mepc` 和 `mcause` 寄存器值。如果 hart 在陷阱处理程序中执行机器模式代码，则 `mepc` 和 `mcause` 中的先前值将无法恢复，因此通常无法恢复执行。
+
+Smrnmi 扩展增加了对 RISC-V 可恢复的不可屏蔽中断 (RNMI) 的支持。该扩展增加了四个新的 CSR（`mnepc`、`mncause`、`mnstatus` 和 `mnscratch`）来保存中断状态，以及一条新指令 MNRET，用于从 RNMI 处理程序恢复。
+
+=== RNMI 中断信号
+
+`rnmi` 中断信号是 hart 的输入。这些中断的优先级高于 hart 上的任何其他中断或异常，并且不能被软件禁用。具体来说，它们不会因清除 `mstatus`.MIE 寄存器而禁用。
+
+=== RNMI 处理程序地址
+
+RNMI 中断陷阱处理程序地址是实现定义的。
+
+RNMI 也有一个关联的异常陷阱处理程序地址，该地址是实现定义的。
+
+NOTE: 例如，某些实现可能会使用 `mtvec` 中指定的地址作为 RNMI 异常陷阱处理程序。
+
+=== RNMI CSR
+
+此扩展添加了额外的 M 模式 CSR，以启用可恢复的不可屏蔽中断 (RNMI)。
+
+.可恢复 NMI 暂存寄存器 `mnscratch`
+include::images/bytefield/mnscratch.edn[]
+
+`mnscratch` CSR 包含一个 MXLEN 位读写寄存器，它使 RNMI 陷阱处理程序能够保存和恢复被中断的上下文。
+
+.可恢复 NMI 程序计数器 `mnepc`。
+include::images/bytefield/mnepc.edn[]
+
+`mnepc` CSR 是一个 MXLEN 位读写寄存器，在进入 RNMI 陷阱处理程序时，它保存中断指令的 PC。
+
+`mnepc` 的低位 (`mnepc[0]`) 始终为零。在仅支持 IALIGN=32 的实现上，低两位 (`mnepc[1:0]`) 始终为零。
+
+如果实现允许 IALIGN 为 16 或 32（例如通过更改 CSR `misa`），则无论何时 IALIGN=32，`mnepc[1]` 位在读取时都会被屏蔽，使其显示为 0。这种屏蔽也发生在 MNRET 指令的隐式读取中。尽管被屏蔽，但当 IALIGN=32 时，`mnepc[1]` 仍然可写。
+
+`mnepc` 是一个 *WARL* 寄存器，必须能够保存所有有效的虚拟地址。它不需要能够保存所有可能的无效地址。在写入 `mnepc` 之前，实现可以将无效地址转换为 `mnepc` 能够保存的其他无效地址。
+
+.可恢复 NMI 原因 `mncause`。
+include::images/bytefield/mncause.edn[]
+
+`mncause` CSR 保存 RNMI 的原因。
+如果原因是中断，则位 MXLEN-1 设置为 1，并且 RNMI 原因编码在最低有效位中。
+如果原因是中断且不支持 RNMI 原因，则位 MXLEN-1 设置为 1，并且零写入最低有效位。
+如果原因是 M 模式内的异常，导致 Smdbltrp 扩展中指定的双重陷阱，则位 MXLEN-1 设置为 0，并且最低有效位设置为与导致双重陷阱的异常对应的原因代码。
+
+.可恢复 NMI 状态寄存器 `mnstatus`。
+include::images/bytefield/mnstatus.edn[]
+
+`mnstatus` CSR 包含一个两位字段 MNPP，在进入 RNMI 陷阱处理程序时，它保存中断上下文的特权模式，编码方式与 `mstatus`.MPP 相同。它还包含一个一位字段 MNPV，在进入 RNMI 陷阱处理程序时，它保存中断上下文的虚拟化模式，编码方式与 `mstatus`.MPV 相同。
+
+如果实现了 Zicfilp 扩展，`mnstatus` 还包含 MNPELP 字段，在进入 RNMI 陷阱处理程序时，它保存先前的 `ELP` 状态。
+当 RNMI 陷阱发生时，MNPELP 设置为 `ELP`，`ELP` 设置为 0。
+
+`mnstatus` 还包含 NMIE 位。当 NMIE=1 时，不可屏蔽中断启用。当 NMIE=0 时，_所有_ 中断禁用。
+
+当 NMIE=0 时，hart 的行为就像 `mstatus`.MPRV 已清除一样，无论 `mstatus`.MPRV 的当前设置如何。
+
+复位时，NMIE 包含值 0。
+
+[NOTE]
+====
+RNMI 在复位时被屏蔽，以便软件有机会初始化数据结构和设备以进行后续 RNMI 处理。
+====
+
+软件可以将 NMIE 设置为 1，但尝试清除 NMIE 无效。
+
+[NOTE]
+====
+通常，只有复位序列才会显式设置 NMIE 位。
+
+***
+
+NMIE 位可设置并不足以支持 RNMI 的嵌套。为了直接支持此功能，需要允许软件清除 NMIE 位——这种设计选择将违背不可屏蔽的概念。
+
+希望最大限度地减少下一次 RNMI 发生延迟的软件可以遵循上半部分/下半部分模型，其中 RNMI 处理程序本身只将任务排队到任务队列然后返回。大部分中断服务稍后执行，并启用 RNMI。
+====
+
+对于 WFI 指令，NMIE 是一个全局中断使能，这意味着 NMIE 的设置不影响 WFI 指令的操作。
+
+`mnstatus` 中的其他位是 _保留的_；软件应写入零，硬件实现应返回零。
+
+=== MNRET 指令
+
+MNRET 是一个仅限 M 模式的指令，它使用 `mnepc` 和 `mnstatus` 中的值返回到中断上下文的程序计数器、特权模式和虚拟化模式。此指令还会设置 `mnstatus`.NMIE。如果 MNRET 将特权模式更改为低于 M 的特权模式，它还会将 `mstatus`.MPRV 设置为 0。
+如果实现了 Zicfilp 扩展，则如果新特权模式是 __y__，MNRET 将 `ELP` 设置为 __y__LPE（参见 <<FCFIACT>>）和 `mnstatus`.MNPELP 的逻辑与。
+
+=== RNMI 操作
+
+当检测到 RNMI 中断时，中断的 PC 写入 `mnepc` CSR，RNMI 类型写入 `mncause` CSR，中断上下文的特权模式写入 `mnstatus` CSR。`mnstatus`.NMIE 位被清除，屏蔽所有中断。
+
+hart 然后进入机器模式并跳转到 RNMI 陷阱处理程序地址。
+
+RNMI 处理程序可以使用新的 MNRET 指令恢复原始执行，该指令从 `mnepc` 恢复 PC，从 `mnstatus` 恢复特权模式，并设置 `mnstatus`.NMIE，从而重新启用中断。
+
+如果 hart 在 M 模式下执行时遇到异常，且 `mnstatus`.NMIE 位清除，则采取的操作与 `mnstatus`.NMIE 位设置时发生异常的操作相同，只是程序计数器设置为 RNMI 异常陷阱处理程序地址。
+
+[NOTE]
+====
+Smrnmi 扩展不改变 MRET 和 SRET 指令的行为。特别是，MRET 和 SRET 不受 `mnstatus`.NMIE 位的影响，并且它们的执行不改变 `mnstatus`.NMIE 位。
+====

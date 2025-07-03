@@ -1,0 +1,144 @@
+[[sec:herd]]
+== Herd 中的形式化公理规范
+
+工具 [.sans-serif]#herd# 将内存模型和 litmus 测试作为输入，并在内存模型之上模拟测试的执行。内存模型以领域特定语言 Cat 编写。本节提供了 RVWMO 的两个 Cat 内存模型。第一个模型，图 #fig:herd2[[fig:herd2]]，遵循 RVWMO 的 _全局内存顺序_，章 #ch:memorymodel[[ch:memorymodel]] 定义，尽可能地适用于 Cat 模型。第二个模型，图 #fig:herd3[[fig:herd3]]，是一个等效的、更高效的、基于偏序的 RVWMO 模型。
+
+模拟器 [.sans-serif]#herd# 是 [.sans-serif]#diy# 工具套件的一部分——有关软件和文档，请参阅 http://diy.inria.fr。模型和更多内容可在 http://diy.inria.fr/cats7/riscv/ 在线获取。
+
+`  `
+
+....
+(*************)
+(* 实用程序 *)
+(*************)
+
+(* 所有栅栏关系 *)
+let fence.r.r = [R];fencerel(Fence.r.r);[R]
+let fence.r.w = [R];fencerel(Fence.r.w);[W]
+let fence.r.rw = [R];fencerel(Fence.r.rw);[M]
+let fence.w.r = [W];fencerel(Fence.w.r);[R]
+let fence.w.w = [W];fencerel(Fence.w.w);[W]
+let fence.w.rw = [W];fencerel(Fence.w.rw);[M]
+let fence.rw.r = [M];fencerel(Fence.rw.r);[R]
+let fence.rw.w = [M];fencerel(Fence.rw.w);[W]
+let fence.rw.rw = [M];fencerel(Fence.rw.rw);[M]
+let fence.tso =
+  let f = fencerel(Fence.tso) in
+  ([W];f;[W]) | ([R];f;[M])
+
+let fence =
+  fence.r.r | fence.r.w | fence.r.rw |
+  fence.w.r | fence.w.w | fence.w.rw |
+  fence.rw.r | fence.rw.w | fence.rw.rw |
+  fence.tso
+
+(* 同地址，中间没有 W 到同地址 *)
+let po-loc-no-w = po-loc \ (po-loc?;[W];po-loc)
+(* 读取相同的写入 *)
+let rsw = rf^-1;rf
+(* 获取，或更强 *)
+let AQ = Acq|AcqRel
+(* 释放或更强 *)
+and RL = RelAcqRel
+(* 所有 RCsc *)
+let RCsc = Acq|Rel|AcqRel
+(* Amo 事件既是 R 又是 W，关系 rmw 关联配对的 lr/sc *)
+let AMO = R & W
+let StCond = range(rmw)
+
+(*************)
+(* ppo 规则 *)
+(*************)
+
+(* 重叠地址排序 *)
+let r1 = [M];po-loc;[W]
+and r2 = ([R];po-loc-no-w;[R]) \ rsw
+and r3 = [AMO|StCond];rfi;[R]
+(* 显式同步 *)
+and r4 = fence
+and r5 = [AQ];po;[M]
+and r6 = [M];po;[RL]
+and r7 = [RCsc];po;[RCsc]
+and r8 = rmw
+(* 语法依赖 *)
+and r9 = [M];addr;[M]
+and r10 = [M];data;[W]
+and r11 = [M];ctrl;[W]
+(* 流水线依赖 *)
+and r12 = [R];(addr|data);[W];rfi;[R]
+and r13 = [R];addr;[M];po;[W]
+
+let ppo = r1 | r2 | r3 | r4 | r5 | r6 | r7 | r8 | r9 | r10 | r11 | r12 | r13
+....
+
+`  `
+
+....
+总计
+
+(* 注意 herd 已经定义了自己的 rf 关系 *)
+
+(* 定义 ppo *)
+include "riscv-defs.cat"
+
+(********************************)
+(* 生成全局内存顺序 *)
+(********************************)
+
+let gmo0 = (* 前驱：即构建 gmo 作为包含 gmo0 的全序 *)
+  loc & (W\FW) * FW | # 任何写入同一位置后的最终写入
+  ppo |               # ppo 兼容
+  rfe                 # 包括 herd 外部 rf（优化）
+
+(* 遍历 gmo0 的所有线性扩展 *)
+with  gmo from linearizations(M\IW,gmo0)
+
+(* 预先添加初始写入 -- 方便计算 rfGMO *)
+let gmo = gmo | loc & IW * (M\IW)
+
+(**********)
+(* 公理 *)
+(**********)
+
+(* 根据加载值公理计算 rf，即 rfGMO *)
+let WR = loc & ([W];(gmo|po);[R])
+let rfGMO = WR \ (loc&([W];gmo);WR)
+
+(* 检查 herd rf 和 rfGMO 的相等性 *)
+empty (rf\rfGMO)|(rfGMO\rf) as RfCons
+
+(* 原子性公理 *)
+let infloc = (gmo & loc)^-1
+let inflocext = infloc & ext
+let winside  = (infloc;rmw;inflocext) & (infloc;rf;rmw;inflocext) & [W]
+empty winside as Atomic
+....
+
+`  `
+
+....
+部分
+
+(***************)
+(* 定义 *)
+(***************)
+
+(* 定义 ppo *)
+include "riscv-defs.cat"
+
+(* 计算一致性关系 *)
+include "cos-opt.cat"
+
+(**********)
+(* 公理 *)
+(**********)
+
+(* 每个位置的 Sc *)
+acyclic co|rf|fr|po-loc as Coherence
+
+(* 主模型公理 *)
+acyclic co|rfe|fr|ppo as Model
+
+(* 原子性公理 *)
+empty rmw & (fre;coe) as Atomic
+....

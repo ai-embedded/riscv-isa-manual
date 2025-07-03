@@ -1,0 +1,1072 @@
+[[priv-csrs]]
+== 控制和状态寄存器 (CSR)
+
+SYSTEM 主操作码用于编码 RISC-V ISA 中的所有特权指令。这些指令可分为两大类：原子读-改-写控制和状态寄存器 (CSR) 的指令（在 Zicsr 扩展中定义），以及所有其他特权指令。特权架构需要 Zicsr 扩展；需要哪些其他特权指令取决于特权架构的功能集。
+
+除了本手册第一卷中描述的非特权状态之外，实现可能包含额外的 CSR，这些 CSR 可由部分特权级别使用第一卷中描述的 CSR 指令访问。在本章中，我们将映射 CSR 地址空间。以下章节将根据特权级别描述每个 CSR 的功能，以及通常与特定特权级别密切相关的其他特权指令。请注意，尽管 CSR 和指令与一个特权级别相关联，但它们也可以在所有更高特权级别访问。
+
+标准 CSR 在读取时没有副作用，但在写入时可能有副作用。
+
+=== CSR 地址映射约定
+
+标准 RISC-V ISA 为多达 4,096 个 CSR 预留了 12 位编码空间 (csr[11:0])。按照约定，CSR 地址的高 4 位 (csr[11:8]) 用于编码 CSR 的读写可访问性，根据特权级别如 <<csrrwpriv>> 所示。最高两位 (csr[11:10]) 指示寄存器是读/写 (`00`、`01` 或 `10`) 还是只读 (`11`)。接下来的两位 (csr[9:8]) 编码可以访问 CSR 的最低特权级别。
+
+[NOTE]
+====
+CSR 地址约定使用 CSR 地址的高位来编码默认访问权限。这简化了硬件中的错误检查并提供了更大的 CSR 空间，但限制了 CSR 到地址空间的映射。
+
+实现可能允许更高特权级别捕获较低特权级别原本允许的 CSR 访问，以允许拦截这些访问。此更改对较低特权软件应该是透明的。
+====
+
+访问不存在的 CSR 的指令是保留的。
+尝试在没有适当特权级别的情况下访问 CSR 会引发非法指令异常，或者如 <<sec:hcauses>> 中所述，引发虚拟指令异常。
+尝试写入只读寄存器会引发非法指令异常。
+读/写寄存器也可能包含一些只读位，在这种情况下，对只读位的写入将被忽略。
+
+<<csrrwpriv>> 还指示了在标准用途和自定义用途之间分配 CSR 地址的约定。指定用于自定义用途的 CSR 地址不会被未来的标准扩展重新定义。
+
+机器模式标准读写 CSR `0x7A0`-`0x7BF` 保留用于调试系统。在这些 CSR 中，`0x7A0`-`0x7AF` 可由机器模式访问，而 `0x7B0`-`0x7BF` 仅对调试模式可见。
+实现应在机器模式访问后一组寄存器时引发非法指令异常。
+
+[NOTE]
+====
+有效的虚拟化要求在虚拟化环境中尽可能多地原生运行指令，同时任何特权访问都会捕获到虚拟机监视器。 cite:[goldbergvm] 在某些较低特权级别只读的 CSR，如果它们在较高特权级别变为读写，则会映射到单独的 CSR 地址。这避免了捕获允许的较低特权访问，同时仍然在非法访问时引发陷阱。目前，计数器是唯一被映射的 CSR。
+====
+
+=== CSR 列表
+
+<<ucsrnames>>-<<mcsrnames1>> 列出了当前已分配 CSR 地址的 CSR。计时器、计数器和浮点 CSR 是标准非特权 CSR。其他寄存器由特权代码使用，如以下章节所述。
+请注意，并非所有实现都需要所有寄存器。
+
+[[csrrwpriv]]
+.RISC-V CSR 地址范围的分配。
+[%autowidth,float="center",align="center",cols="^,^,^,^,<,<,<,<"]
+[.monofont]
+|===
+3+^|CSR 地址 2.2+|十六进制 3.2+|用途和可访问性
+|[11:10] |[9:8] |[7:4]
+8+|非特权和用户级 CSR
+m|00 m|00 m|XXXX 2+m| 0x000-0x0FF 3+|标准读写
+|`01` |`00` |`XXXX` 2+| `0x400-0x4FF` 3+|标准读写
+|`10` |`00` |`XXXX` 2+| `0x800-0x8FF` 3+|自定义读写
+|`11` |`00` |`0XXX` 2+| `0xC00-0xC7F` 3+|标准只读
+|`11` |`00` |`10XX` 2+| `0xC80-0xCBF` 3+|标准只读
+|`11` |`00` |`11XX` 2+| `0xCC0-0xCFF` 3+|自定义只读
+8+|Supervisor 级 CSR
+|`00` |`01` |`XXXX` 2+| `0x100-0x1FF` 3+|标准读写
+|`01` |`01` |`0XXX` 2+| `0x500-0x57F` 3+|标准读写
+|`01` |`01` |`10XX` 2+| `0x580-0x5BF` 3+|标准读写
+|`01` |`01` |`11XX` 2+| `0x5C0-0x5FF` 3+|自定义读写
+|`10` |`01` |`0XXX` 2+| `0x900-0x97F` 3+|标准读写
+|`10` |`01` |`10XX` 2+| `0x980-0x9BF` 3+|标准读写
+|`10` |`01` |`11XX` 2+| `0x9C0-0x9FF` 3+|自定义读写
+|`11` |`01` |`0XXX` 2+| `0xD00-0xD7F` 3+|标准只读
+|`11` |`01` |`10XX` 2+| `0xD80-0xDBF` 3+|标准只读
+|`11` |`01` |`11XX` 2+| `0xDC0-0xDFF` 3+|自定义只读
+8+|Hypervisor 和 VS CSR
+|`00` |`10` |`XXXX` 2+| `0x200-0x2FF` 3+|标准读写
+|`01` |`10` |`0XXX` 2+| `0x600-0x67F` 3+|标准读写
+|`01` |`10` |`10XX` 2+| `0x680-0x6BF` 3+|标准读写
+|`01` |`10` |`11XX` 2+| `0x6C0-0x6FF` 3+|自定义读写
+|`10` |`10` |`0XXX` 2+| `0xA00-0xA7F` 3+|标准读写
+|`10` |`10` |`10XX` 2+| `0xA80-0xABF` 3+|标准读写
+|`10` |`10` |`11XX` 2+| `0xAC0-0xAFF` 3+|自定义读写
+|`11` |`10` |`0XXX` 2+| `0xE00-0xE7F` 3+|标准只读
+|`11` |`10` |`10XX` 2+| `0xE80-0xEBF` 3+|标准只读
+|`11` |`10` |`11XX` 2+| `0xEC0-0xEFF` 3+|自定义只读
+8+|机器级 CSR
+|`00` |`11` |`XXXX` 2+|`0x300-0x3FF` 3+|标准读写
+|`01` |`11` |`0XXX` 2+|`0x700-0x77F` 3+|标准读写
+|`01` |`11` |`100X` 2+|`0x780-0x79F` 3+|标准读写
+|`01` |`11` |`1010` 2+|`0x7A0-0x7AF` 3+|标准读写调试 CSR
+|`01` |`11` |`1011` 2+|`0x7B0-0x7BF` 3+|仅调试模式 CSR
+|`01` |`11` |`11XX` 2+|`0x7C0-0x7FF` 3+|自定义读写
+|`10` |`11` |`0XXX` 2+|`0xB00-0xB7F` 3+|标准读写
+|`10` |`11` |`10XX` 2+|`0xB80-0xBBF` 3+|标准读写
+|`10` |`11` |`11XX` 2+|`0xBC0-0xBFF` 3+|自定义读写
+|`11` |`11` |`0XXX` 2+|`0xF00-0xF7F` 3+|标准只读
+|`11` |`11` |`10XX` 2+|`0xF80-0xFBF` 3+|标准只读
+|`11` |`11` |`11XX` 2+|`0xFC0-0xFFF` 3+|自定义只读
+|===
+
+<<<
+
+[[ucsrnames]]
+.当前已分配的 RISC-V 非特权 CSR 地址。
+[float="center",align="center",cols="<10%,<10%,<20%,<60%",options="header"]
+|===
+|编号 |特权 |名称 |描述
+4+^|非特权浮点 CSR
+
+|`0x001` +
+`0x002` +
+`0x003`
+|URW +
+URW +
+URW
+|`fflags` +
+`frm` +
+`fcsr`
+|浮点累积异常。 +
+浮点动态舍入模式。 +
+浮点控制和状态寄存器（`frm` +`fflags`）。
+
+4+^|非特权向量 CSR
+
+|`0x008` +
+`0x009` +
+`0x00A` +
+`0x00F` +
+`0xC20` +
+`0xC21` +
+`0xC22`
+|URW +
+URW +
+URW +
+URW +
+URO +
+URO +
+URO
+|`vstart` +
+`vxsat` +
+`vxrm` +
+`vcsr` +
+`vl` +
+`vtype` +
+`vlenb`
+|向量起始位置。 +
+定点累积饱和标志。 +
+定点舍入模式。 +
+向量控制和状态寄存器。 +
+向量长度。 +
+向量数据类型寄存器。 +
+向量寄存器字节长度。
+
+4+^|非特权 Zicfiss 扩展 CSR
+|`0x011` +
+|URW +
+|`ssp` +
+|影子栈指针。 +
+
+4+^|非特权熵源扩展 CSR
+|`0x015` +
+|URW +
+|`seed` +
+|加密随机位生成器的种子。 +
+
+4+^|非特权 Zcmt 扩展 CSR
+|`0x017` +
+|URW +
+|`jvt` +
+|表跳转基向量和控制寄存器。 +
+
+4+^|非特权计数器/计时器
+
+|`0xC00` +
+`0xC01` +
+`0xC02` +
+`0xC03` +
+`0xC04` +
+ &#160; +
+`0xC1F` +
+`0xC80` +
+`0xC81` +
+`0xC82` +
+`0xC83` +
+`0xC84` +
+&#160; +
+`0xC9F`
+|URO +
+URO +
+URO +
+URO +
+URO +
+&#160; +
+URO +
+URO +
+URO +
+URO +
+URO +
+URO +
+&#160; +
+URO
+|`cycle` +
+`time` +
+`instret` +
+`hpmcounter3` +
+`hpmcounter4` +
+&#8942; +
+`hpmcounter31` +
+`cycleh` +
+`timeh` +
+`instreth` +
+`hpmcounter3h` +
+`hpmcounter4h` +
+&#8942; +
+`hpmcounter31h`
+|RDCYCLE 指令的周期计数器。 +
+RDTIME 指令的计时器。 +
+RDINSTRET 指令的已执行指令计数器。 +
+性能监控计数器。 +
+性能监控计数器。 +
+&#160; +
+性能监控计数器。 +
+`cycle` 的高 32 位，仅 RV32。 +
+`time` 的高 32 位，仅 RV32。 +
+`instret` 的高 32 位，仅 RV32。 +
+`hpmcounter3` 的高 32 位，仅 RV32。 +
+`hpmcounter4` 的高 32 位，仅 RV32。 +
+&#160; +
+`hpmcounter31` 的高 32 位，仅 RV32。
+|===
+
+<<<
+
+[[scsrnames]]
+.当前已分配的 RISC-V supervisor 级 CSR 地址。
+[%autowidth,float="center",align="center",cols="<,<,<,<",options="header"]
+|===
+|编号 |特权 |名称 |描述
+4+^|Supervisor 陷阱设置
+
+|`0x100` +
+`0x104` +
+`0x105` +
+`0x106`
+|SRW +
+SRW +
+SRW +
+SRW
+|`sstatus` +
+`sie` +
+`stvec` +
+`scounteren`
+|Supervisor 状态寄存器。 +
+Supervisor 中断使能寄存器。 +
+Supervisor 陷阱处理程序基地址。 +
+Supervisor 计数器使能。
+
+4+^|Supervisor 配置
+
+|`0x10A` |SRW |`senvcfg` |Supervisor 环境配置寄存器。
+
+4+^|Supervisor 计数器设置
+
+|`0x120` |SRW |`scountinhibit` |Supervisor 计数器禁用寄存器。
+
+4+^|Supervisor 陷阱处理
+
+|`0x140` +
+`0x141` +
+`0x142` +
+`0x143` +
+`0x144` +
+`0xDA0`
+|SRW +
+SRW +
+SRW +
+SRW +
+SRW +
+SRO
+|`sscratch` +
+`sepc` +
+`scause` +
+`stval` +
+`sip` +
+`scountovf`
+|Supervisor 暂存寄存器。 +
+Supervisor 异常程序计数器。 +
+Supervisor 陷阱原因。 +
+Supervisor 陷阱值。 +
+Supervisor 中断待处理。 +
+Supervisor 计数溢出。
+
+4+^|Supervisor 间接
+
+|`0x150` +
+`0x151` +
+`0x152` +
+`0x153` +
+`0x155` +
+`0x156` +
+`0x157`
+|SRW +
+SRW +
+SRW +
+SRW +
+SRW +
+SRW +
+SRW
+|`siselect` +
+`sireg` +
+`sireg2` +
+`sireg3` +
+`sireg4` +
+`sireg5` +
+`sireg6`
+|Supervisor 间接寄存器选择。 +
+Supervisor 间接寄存器别名。 +
+Supervisor 间接寄存器别名 2。 +
+Supervisor 间接寄存器别名 3。 +
+Supervisor 间接寄存器别名 4。 +
+Supervisor 间接寄存器别名 5。 +
+Supervisor 间接寄存器别名 6。
+
+4+^|Supervisor 保护和转换
+
+|`0x180` |SRW |`satp` |Supervisor 地址转换和保护。
+
+4+^|Supervisor 计时器比较
+
+|`0x14D` +
+`0x15D`
+|SRW +
+SRW
+|`stimecmp` +
+`stimecmph`
+|Supervisor 计时器比较。 +
+`stimecmp` 的高 32 位，仅 RV32。
+
+4+^|调试/跟踪寄存器
+
+|`0x5A8` |SRW |`scontext` |Supervisor 模式上下文寄存器。
+
+4+^|Supervisor 资源管理配置
+|`0x181` |SRW |`srmcfg` |Supervisor 资源管理配置。
+
+4+^|Supervisor 状态使能寄存器
+|`0x10C` +
+ `0x10D` +
+ `0x10E` +
+ `0x10F`
+|SRW +
+ SRW +
+ SRW +
+ SRW
+|`sstateen0` +
+ `sstateen1` +
+ `sstateen2` +
+ `sstateen3`
+|Supervisor 状态使能 0 寄存器。 +
+ Supervisor 状态使能 1 寄存器。 +
+ Supervisor 状态使能 2 寄存器。 +
+ Supervisor 状态使能 3 寄存器。
+
+4+^|Supervisor 控制转移记录配置
+|`0x14E` +
+ `0x14F` +
+ `0x15F`
+|SRW +
+ SRW +
+ SRW
+|`sctrctl` +
+ `sctrstatus` +
+ `sctrdepth`
+|Supervisor 控制转移记录控制寄存器。 +
+ Supervisor 控制转移记录状态寄存器。 +
+ Supervisor 控制转移记录深度寄存器。
+
+|===
+
+<<<
+
+[[hcsrnames]]
+.当前已分配的 RISC-V hypervisor 和 VS CSR 地址。
+[%autowidth,float="center",align="center",cols="<,<,<,<",options="header"]
+|===
+|编号 |特权 |名称 |描述
+4+^|Hypervisor 陷阱设置
+
+|`0x600` +
+`0x602` +
+`0x603` +
+`0x604` +
+`0x606` +
+`0x607` +
+`0x612`
+|HRW +
+HRW +
+HRW +
+HRW +
+HRW +
+HRW +
+HRW
+|`hstatus` +
+`hedeleg` +
+`hideleg` +
+`hie` +
+`hcounteren` +
+`hgeie` +
+`hedelegh`
+|Hypervisor 状态寄存器。 +
+Hypervisor 异常委托寄存器。 +
+Hypervisor 中断委托寄存器。 +
+Hypervisor 中断使能寄存器。 +
+Hypervisor 计数器使能。 +
+Hypervisor 客户机外部中断使能寄存器。 +
+`hedeleg` 的高 32 位，仅 RV32。
+
+4+^|Hypervisor 陷阱处理
+
+|`0x643` +
+`0x644` +
+`0x645` +
+`0x64A` +
+`0xE12`
+|HRW +
+HRW +
+HRW +
+HRW +
+HRO
+|`htval` +
+`hip` +
+`hvip` +
+`htinst` +
+`hgeip`
+|Hypervisor 陷阱值。 +
+Hypervisor 中断待处理。 +
+Hypervisor 虚拟中断待处理。 +
+Hypervisor 陷阱指令（已转换）。 +
+Hypervisor 客户机外部中断待处理。
+
+4+^|Hypervisor 配置
+
+|`0x60A` +
+`0x61A`
+|HRW +
+HRW
+|`henvcfg` +
+`henvcfgh`
+|Hypervisor 环境配置寄存器。 +
+`henvcfg` 的高 32 位，仅 RV32。
+
+4+^|Hypervisor 保护和转换
+
+|`0x680` |HRW |`hgatp` |Hypervisor 客户机地址转换和保护。
+
+4+^|调试/跟踪寄存器
+
+|`0x6A8` |HRW |`hcontext` |Hypervisor 模式上下文寄存器。
+
+4+^|Hypervisor 计数器/计时器虚拟化寄存器
+
+|`0x605` +
+`0x615`
+|HRW +
+HRW
+|`htimedelta` +
+`htimedeltah`
+|VS/VU 模式计时器增量。 +
+`htimedelta` 的高 32 位，仅 RV32。
+
+4+^|Hypervisor 状态使能寄存器
+|`0x60C` +
+ `0x60D` +
+ `0x60E` +
+ `0x60F` +
+ `0x61C` +
+ `0x61D` +
+ `0x61E` +
+ `0x61F`
+|HRW +
+ HRW +
+ HRW +
+ HRW +
+ HRW +
+ HRW +
+ HRW +
+ HRW
+|`hstateen0` +
+ `hstateen1` +
+ `hstateen2` +
+ `hstateen3` +
+ `hstateen0h` +
+ `hstateen1h` +
+ `hstateen2h` +
+ `hstateen3h`
+|Hypervisor 状态使能 0 寄存器。 +
+ Hypervisor 状态使能 1 寄存器。 +
+ Hypervisor 状态使能 2 寄存器。 +
+ Hypervisor 状态使能 3 寄存器。 +
+ Hypervisor 状态使能 0 寄存器的高 32 位，仅 RV32。 +
+ Hypervisor 状态使能 1 寄存器的高 32 位，仅 RV32。 +
+ Hypervisor 状态使能 2 寄存器的高 32 位，仅 RV32。 +
+ Hypervisor 状态使能 3 寄存器的高 32 位，仅 RV32。
+
+4+^|虚拟 Supervisor 寄存器
+
+|`0x200` +
+`0x204` +
+`0x205` +
+`0x240` +
+`0x241` +
+`0x242` +
+`0x243` +
+`0x244` +
+`0x280`
+|HRW +
+HRW +
+HRW +
+HRW +
+HRW +
+HRW +
+HRW +
+HRW +
+HRW
+|`vsstatus` +
+`vsie` +
+`vstvec` +
+`vsscratch` +
+`vsepc` +
+`vscause` +
+`vstval` +
+`vsip` +
+`vsatp`
+|虚拟 Supervisor 状态寄存器。 +
+虚拟 Supervisor 中断使能寄存器。 +
+虚拟 Supervisor 陷阱处理程序基地址。 +
+虚拟 Supervisor 暂存寄存器。 +
+虚拟 Supervisor 异常程序计数器。 +
+虚拟 Supervisor 陷阱原因。 +
+虚拟 Supervisor 陷阱值。 +
+虚拟 Supervisor 中断待处理。 +
+虚拟 Supervisor 地址转换和保护。
+
+4+^|虚拟 Supervisor 间接
+
+|`0x250` +
+`0x251` +
+`0x252` +
+`0x253` +
+`0x255` +
+`0x256` +
+`0x257`
+|HRW +
+HRW +
+HRW +
+HRW +
+HRW +
+HRW +
+HRW
+|`vsiselect` +
+`vsireg` +
+`vsireg2` +
+`vsireg3` +
+`vsireg4` +
+`vsireg5` +
+`vsireg6`
+|虚拟 Supervisor 间接寄存器选择。 +
+虚拟 Supervisor 间接寄存器别名。 +
+虚拟 Supervisor 间接寄存器别名 2。 +
+虚拟 Supervisor 间接寄存器别名 3。 +
+虚拟 Supervisor 间接寄存器别名 4。 +
+虚拟 Supervisor 间接寄存器别名 5。 +
+虚拟 Supervisor 间接寄存器别名 6。
+
+4+^|虚拟 Supervisor 计时器比较
+
+|`0x24D` +
+`0x25D`
+|HRW +
+HRW
+|`vstimecmp` +
+`vstimecmph`
+|虚拟 Supervisor 计时器比较。 +
+`vstimecmp` 的高 32 位，仅 RV32。
+
+4+^|虚拟 Supervisor 控制转移记录配置
+|`0x24E`
+|HRW
+|`vsctrctl`
+|虚拟 Supervisor 控制转移记录控制寄存器。
+
+|===
+
+<<<
+
+[[mcsrnames0]]
+[.monocell]
+.当前已分配的 RISC-V 机器级 CSR 地址。
+[%autowidth,float="center",align="center",cols="<,<,<,<",options="header"]
+|===
+|编号 |特权 |名称 |描述
+4+^|机器信息寄存器
+
+|`0xF11` +
+`0xF12` +
+`0xF13` +
+`0xF14` +
+`0xF15`
+|MRO +
+MRO +
+MRO +
+MRO +
+MRO
+|`mvendorid` +
+`marchid` +
+`mimpid` +
+`mhartid` +
+`mconfigptr`
+|供应商 ID。 +
+架构 ID。 +
+实现 ID。 +
+硬件线程 ID。 +
+配置数据结构指针。
+
+4+^|机器陷阱设置
+
+|`0x300` +
+`0x301` +
+`0x302` +
+`0x303` +
+`0x304` +
+`0x305` +
+`0x306` +
+`0x310` +
+`0x312`
+|MRW +
+MRW +
+MRW +
+MRW +
+MRW +
+MRW +
+MRW +
+MRW +
+MRW
+|`mstatus` +
+`misa` +
+`medeleg` +
+`mideleg` +
+`mie` +
+`mtvec` +
+`mcounteren` +
+`mstatush` +
+`medelegh`
+|机器状态寄存器。 +
+ISA 和扩展 +
+机器异常委托寄存器。 +
+机器中断委托寄存器。 +
+机器中断使能寄存器。 +
+机器陷阱处理程序基地址。 +
+机器计数器使能。 +
+附加机器状态寄存器，仅 RV32。 +
+`medeleg` 的高 32 位，仅 RV32。
+
+4+^|机器计数器配置
+
+|`0x321` +
+`0x322` +
+`0x721` +
+`0x722`
+|MRW +
+MRW +
+MRW +
+MRW
+|`mcyclecfg` +
+`minstretcfg` +
+`mcyclecfgh` +
+`minstretcfgh`
+|机器周期计数器配置寄存器。 +
+机器指令退役计数器配置寄存器。 +
+`mcyclecfg` 的高 32 位，仅 RV32。 +
+`minstretcfg` 的高 32 位，仅 RV32。
+
+4+^|机器陷阱处理
+
+|`0x340` +
+`0x341` +
+`0x342` +
+`0x343` +
+`0x344` +
+`0x34A` +
+`0x34B`
+|MRW +
+MRW +
+MRW +
+MRW +
+MRW +
+MRW +
+MRW
+|`mscratch` +
+`mepc` +
+`mcause` +
+`mtval` +
+`mip` +
+`mtinst` +
+`mtval2`
+|机器暂存寄存器。 +
+机器异常程序计数器。 +
+机器陷阱原因。 +
+机器陷阱值。 +
+机器中断待处理。 +
+机器陷阱指令（已转换）。 +
+机器第二陷阱值。
+
+4+^|机器间接
+
+|`0x350` +
+`0x351` +
+`0x352` +
+`0x353` +
+`0x355` +
+`0x356` +
+`0x357`
+|MRW +
+MRW +
+MRW +
+MRW +
+MRW +
+MRW +
+MRW
+|`miselect` +
+`mireg` +
+`mireg2` +
+`mireg3` +
+`mireg4` +
+`mireg5` +
+`mireg6`
+|机器间接寄存器选择。 +
+机器间接寄存器别名。 +
+机器间接寄存器别名 2。 +
+机器间接寄存器别名 3。 +
+机器间接寄存器别名 4。 +
+机器间接寄存器别名 5。 +
+机器间接寄存器别名 6。
+
+4+^|机器配置
+
+|`0x30A` +
+`0x31A` +
+`0x747` +
+`0x757`
+|MRW +
+MRW +
+MRW +
+MRW
+|`menvcfg` +
+`menvcfgh` +
+`mseccfg` +
+`mseccfgh`
+|机器环境配置寄存器。 +
+`menvcfg` 的高 32 位，仅 RV32。 +
+机器安全配置寄存器。 +
+`mseccfg` 的高 32 位，仅 RV32。
+
+4+^|机器内存保护
+
+|`0x3A0` +
+`0x3A1` +
+`0x3A2` +
+`0x3A3` +
+&#160; +
+`0x3AE` +
+`0x3AF` +
+`0x3B0` +
+`0x3B1` +
+&#160; +
+`0x3EF`
+|MRW +
+MRW +
+MRW +
+MRW +
+&#160; +
+MRW +
+MRW +
+MRW +
+MRW +
+&#160; +
+MRW
+|`pmpcfg0` +
+`pmpcfg1` +
+`pmpcfg2` +
+`pmpcfg3` +
+&#8943; +
+`pmpcfg14` +
+`pmpcfg15` +
+`pmpaddr0` +
+`pmpaddr1` +
+&#8943; +
+`pmpaddr63`
+|物理内存保护配置。 +
+物理内存保护配置，仅 RV32。 +
+物理内存保护配置。 +
+物理内存保护配置，仅 RV32。 +
+&#160; +
+物理内存保护配置。 +
+物理内存保护配置，仅 RV32。 +
+物理内存保护地址寄存器。 +
+物理内存保护地址寄存器。 +
+&#160; +
+物理内存保护地址寄存器。
+
+4+^|机器状态使能寄存器
+|`0x30C` +
+ `0x30D` +
+ `0x30E` +
+ `0x30F` +
+ `0x31C` +
+ `0x31D` +
+ `0x31E` +
+ `0x31F`
+|MRW +
+ MRW +
+ MRW +
+ MRW +
+ MRW +
+ MRW +
+ MRW +
+ MRW
+|`mstateen0` +
+ `mstateen1` +
+ `mstateen2` +
+ `mstateen3` +
+ `mstateen0h` +
+ `mstateen1h` +
+ `mstateen2h` +
+ `mstateen3h`
+|机器状态使能 0 寄存器。 +
+ 机器状态使能 1 寄存器。 +
+ 机器状态使能 2 寄存器。 +
+ 机器状态使能 3 寄存器。 +
+ 机器状态使能 0 寄存器的高 32 位，仅 RV32。 +
+ 机器状态使能 1 寄存器的高 32 位，仅 RV32。 +
+ 机器状态使能 2 寄存器的高 32 位，仅 RV32。 +
+ 机器状态使能 3 寄存器的高 32 位，仅 RV32。
+|===
+
+<<<
+
+[[mcsrnames1]]
+.当前已分配的 RISC-V 机器级 CSR 地址。
+[%autowidth,float="center",align="center",cols="<,<,<,<",options="header"]
+|===
+|编号 |特权 |名称 |描述
+4+^|机器不可屏蔽中断处理
+
+|`0x740` +
+`0x741` +
+`0x742` +
+`0x744`
+|MRW +
+MRW +
+MRW +
+MRW
+|`mnscratch` +
+`mnepc` +
+`mncause` +
+`mnstatus`
+|可恢复 NMI 暂存寄存器。 +
+可恢复 NMI 程序计数器。 +
+可恢复 NMI 原因。 +
+可恢复 NMI 状态。
+
+4+^|机器计数器/计时器
+
+|`0xB00` +
+`0xB02` +
+`0xB03` +
+`0xB04` +
+&#160; +
+`0xB1F` +
+`0xB80` +
+`0xB82` +
+`0xB83` +
+`0xB84` +
+&#160; +
+`0xB9F`
+|MRW +
+MRW +
+MRW +
+MRW +
+&#160; +
+MRW +
+MRW +
+MRW +
+MRW +
+MRW +
+&#160; +
+MRW +
+|`mcycle` +
+`minstret` +
+`mhpmcounter3` +
+`mhpmcounter4` +
+&#8942; +
+`mhpmcounter31` +
+`mcycleh` +
+`minstreth` +
+`mhpmcounter3h` +
+`mhpmcounter4h` +
+&#8942;
+`mhpmcounter31h`
+|机器周期计数器。 +
+机器指令退役计数器。 +
+机器性能监控计数器。 +
+机器性能监控计数器。 +
+&#160; +
+机器性能监控计数器。 +
+`mcycle` 的高 32 位，仅 RV32。 +
+`minstret` 的高 32 位，仅 RV32。 +
+`mhpmcounter3` 的高 32 位，仅 RV32。 +
+`mhpmcounter4` 的高 32 位，仅 RV32。 +
+&#160; +
+`mhpmcounter31` 的高 32 位，仅 RV32。
+
+4+^|机器计数器设置
+
+|`0x320` +
+`0x323` +
+`0x324` +
+&#160; +
+`0x33F` +
+`0x723` +
+`0x724` +
+&#160; +
+`0x73F`
+|MRW +
+MRW +
+MRW +
+&#160; +
+MRW +
+MRW +
+MRW +
+&#160; +
+MRW
+|`mcountinhibit` +
+`mhpmevent3` +
+`mhpmevent4` +
+&#8942; +
+`mhpmevent31` +
+`mhpmevent3h` +
+`mhpmevent4h` +
+&#8942; +
+`mhpmevent31h`
+|机器计数器禁用寄存器。 +
+机器性能监控事件选择器。 +
+机器性能监控事件选择器。 +
+&#160; +
+机器性能监控事件选择器。 +
+`mhpmevent3` 的高 32 位，仅 RV32。 +
+`mhpmevent4` 的高 32 位，仅 RV32。 +
+&#160; +
+`mhpmevent31` 的高 32 位，仅 RV32。
+
+4+^|机器控制转移记录配置
+|`0x34E`
+|MRW
+|`mctrctl`
+|机器控制转移记录控制寄存器。
+
+4+^|调试/跟踪寄存器（与调试模式共享）
+
+|`0x7A0` +
+`0x7A1` +
+`0x7A2` +
+`0x7A3` +
+`0x7A8`
+|MRW +
+MRW +
+MRW +
+MRW +
+MRW
+|`tselect` +
+`tdata1` +
+`tdata2` +
+`tdata3` +
+`mcontext`
+
+|调试/跟踪触发器寄存器选择。 +
+第一个调试/跟踪触发器数据寄存器。 +
+第二个调试/跟踪触发器数据寄存器。 +
+第三个调试/跟踪触发器数据寄存器。 +
+机器模式上下文寄存器。
+
+4+^|调试模式寄存器
+
+|`0x7B0` +
+`0x7B1` +
+`0x7B2` +
+`0x7B3`
+|DRW +
+DRW +
+DRW +
+DRW +
+|`dcsr` +
+`dpc` +
+`dscratch0` +
+`dscratch1`
+|调试控制和状态寄存器。 +
+调试程序计数器。 +
+调试暂存寄存器 0。 +
+调试暂存寄存器 1。
+|===
+
+=== CSR 字段规范
+
+以下定义和缩写用于指定 CSR 中字段的行为。
+
+==== 保留写入保留值，读取忽略值 (WPRI)
+
+一些完整的读/写字段保留供将来使用。软件应忽略从这些字段读取的值，并在将值写入同一寄存器的其他字段时保留这些字段中保存的值。为了向前兼容，未提供这些字段的实现必须使其只读为零。这些字段在寄存器描述中标记为 *WPRI*。
+
+[NOTE]
+====
+为了简化软件模型，以前在 CSR 中保留的字段的任何向后兼容的未来定义都必须应对使用非原子读/改/写序列更新 CSR 中其他字段的可能性。或者，原始 CSR 定义必须指定子字段只能原子更新，这通常可能需要两指令清除位/设置位序列，如果中间值不合法，则可能存在问题。
+====
+
+==== 写入/读取仅合法值 (WLRL)
+
+一些读/写 CSR 字段仅指定部分可能位编码的行为，其他位编码保留。软件不应向此类字段写入除合法值之外的任何内容，并且不应假定读取将返回合法值，除非上次写入是合法值，或者自另一个操作（例如，复位）将寄存器设置为合法值以来，寄存器未被写入。这些字段在寄存器描述中标记为 *WLRL*。
+
+[NOTE]
+====
+硬件实现只需要实现足够的状体位来区分支持的值，但必须在读取时始终返回任何支持值的完整指定位编码。
+====
+
+如果指令尝试向 *WLRL* 字段写入不支持的值，则允许但不要求实现引发非法指令异常。当上次写入是非法值时，实现可以在读取 *WLRL* 字段时返回任意位模式，但返回的值应确定性地取决于非法写入值和写入前字段的值。
+
+==== 写入任意值，读取合法值 (WARL)
+
+一些读/写 CSR 字段仅定义部分位编码，但允许写入任何值，同时保证在读取时返回合法值。假设写入 CSR 没有其他副作用，则可以通过尝试写入所需设置然后读取以查看值是否保留来确定支持的值范围。这些字段在寄存器描述中标记为 *WARL*。
+
+实现不会在向 *WARL* 字段写入不支持的值时引发异常。当上次写入是非法值时，实现可以在读取 *WARL* 字段时返回任何合法值，但返回的合法值应确定性地取决于非法写入值和 hart 的架构状态。
+
+=== CSR 字段调制
+
+如果对一个 CSR 的写入更改了第二个 CSR 字段允许的合法值集，则除非另有规定，否则第二个 CSR 的字段立即从其新的合法值中获取一个 `UNSPECIFIED` 值。即使字段在写入之前的值在写入之后仍然合法，这也是如此；字段的值可能会因对控制 CSR 的写入而改变。
+
+[NOTE]
+====
+作为此规则的一个特例，写入一个 CSR 的值可以控制第二个 CSR 的字段是可写（具有多个合法值）还是只读。当对控制 CSR 的写入导致第二个 CSR 的字段从以前的只读变为现在可写时，该字段立即获得一个 `UNSPECIFIED` 但合法的价值，除非另有规定。
+
+***
+一些 CSR 字段在可写时被定义为其他 CSR 字段的别名。令 _x_ 为此类 CSR 字段，令 _y_ 为其在可写时别名的 CSR 字段。如果对控制 CSR 的写入导致字段 _x_ 从以前的只读变为现在可写，则 _x_ 的新值不是 `UNSPECIFIED`，而是立即反映其别名 _y_ 的现有值，这是必需的。
+====
+
+因此，更改 CSR 的值不是对受影响 CSR 的读取或写入，因此不会触发为该 CSR 指定的任何副作用。
+
+=== CSR 的隐式读取
+
+实现有时会执行 CSR 的 _隐式_ 读取。（例如，所有 S 模式指令获取都隐式读取 `satp` CSR。）除非另有规定，否则隐式读取 CSR 返回的值与通过在足够特权模式下使用 CSR 访问指令显式读取 CSR 返回的值相同。
+
+[[csrwidthmodulation]]
+=== CSR 宽度调制
+
+如果 CSR 的宽度发生变化（例如，通过更改 SXLEN 或 UXLEN，如 <<xlen-control>> 中所述），则新宽度 CSR 的 _可写_ 字段和位的值，除非另有规定，否则通过以下算法从先前宽度 CSR 确定：
+
+. 先前宽度 CSR 的值复制到相同宽度的临时寄存器中。
+. 对于先前宽度 CSR 的只读位，临时寄存器中相同位置的位设置为零。
+. 临时寄存器的宽度更改为新宽度。如果新宽度 _W_ 小于先前宽度，则保留临时寄存器的最低有效 _W_ 位，并丢弃更高有效位。如果新宽度大于先前宽度，则临时寄存器零扩展到更宽的宽度。
+. 新宽度 CSR 的每个可写字段都取临时寄存器中相同位置的位的值。
+
+更改 CSR 的宽度不是对 CSR 的读取或写入，因此不会触发任何副作用。
+
+=== 对宽于 XLEN 的 CSR 的显式访问
+
+如果标准 CSR 宽于 XLEN 位，则显式读取 CSR 返回寄存器的最低有效 XLEN 位，并且显式写入 CSR 仅修改寄存器的最低有效 XLEN 位，保留高位不变。
+
+一些标准 CSR，例如 Zicntr 扩展的计数器 CSR，始终为 64 位，即使 XLEN=32（RV32）也是如此。
+对于每个此类 64 位 CSR（例如，计数器 `time`），通常会定义一个相应的 32 位 _高半部 CSR_，名称相同，但末尾附加字母“`h`”（`timeh`）。
+高半部 CSR 别名其同名 64 位 CSR 的 63:32 位，从而为 RV32 软件提供了一种读取和修改否则无法访问的 32 位的方法。
+
+标准高半部 CSR 仅在基本 RISC-V 指令集为 RV32 (XLEN=32) 时才可访问。
+对于 RV64 (XLEN=64)，所有标准高半部 CSR 的地址都保留，因此尝试访问高半部 CSR 通常会引发非法指令异常。

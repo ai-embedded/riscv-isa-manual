@@ -1,0 +1,586 @@
+[[hypervisor]]
+== “H”扩展：管理程序支持，版本 1.0
+
+本章描述了 RISC-V 管理程序扩展，该扩展虚拟化了 supervisor 级架构，以支持在类型 1 或类型 2 管理程序之上高效托管客户操作系统。管理程序扩展将 supervisor 模式更改为 _管理程序扩展 supervisor 模式_（HS 模式，或简称 _管理程序模式_），管理程序或具有托管能力的操作系统在此模式下运行。管理程序扩展还增加了另一个地址转换阶段，从 _客户物理地址_ 到 supervisor 物理地址，以虚拟化客户操作系统的内存和内存映射 I/O 子系统。HS 模式与 S 模式相同，但增加了额外的指令和 CSR，用于控制新的地址转换阶段并支持在虚拟 S 模式（VS 模式）下托管客户操作系统。常规 S 模式操作系统可以在 HS 模式下或作为 VS 模式客户机运行，无需修改。
+
+在 HS 模式下，操作系统或管理程序通过与操作系统通常从 S 模式下相同的 SBI 与机器交互。HS 模式管理程序应为其 VS 模式客户机实现 SBI。
+
+管理程序扩展依赖于具有 32 个 `x` 寄存器（RV32I 或 RV64I）的“I”基本整数 ISA，而不是只有 16 个 `x` 寄存器的 RV32E 或 RV64E。CSR `mtval` 不得为只读零，并且必须支持标准页式地址转换，对于 RV32 为 Sv32，对于 RV64 至少为 Sv39。
+
+管理程序扩展通过设置 `misa` CSR 中的第 7 位来启用，该位对应于字母 H。鼓励实现管理程序扩展的 RISC-V hart 不要硬连线 `misa`[7]，以便可以禁用该扩展。
+
+[NOTE]
+====
+基线特权架构旨在简化经典虚拟化技术的使用，其中客户操作系统在用户级运行，因为少数特权指令可以很容易地被检测和捕获。管理程序扩展通过降低这些陷阱的频率来提高虚拟化性能。
+
+管理程序扩展旨在在未实现该扩展的平台上高效模拟，方法是在 S 模式下运行管理程序，并捕获到 M 模式以进行管理程序 CSR 访问并维护影子页表。对于类型 2 管理程序，大多数 CSR 访问都是有效的 S 模式访问，因此无需捕获。
+管理程序可以类似地支持嵌套虚拟化。
+====
+
+=== 特权模式
+
+当前 _虚拟化模式_，表示为 V，指示 hart 当前是否在客户机中执行。当 V=1 时，hart 处于虚拟 S 模式（VS 模式），或在 VS 模式下运行的客户操作系统之上的虚拟 U 模式（VU 模式）。当 V=0 时，hart 处于 M 模式、HS 模式，或在 HS 模式下运行的操作系统之上的 U 模式。虚拟化模式还指示两阶段地址转换是否处于活动状态（V=1）或非活动状态（V=0）。<<HPrivModes>> 列出了具有管理程序扩展的 RISC-V hart 的可能特权模式。
+
+<<<
+
+[[HPrivModes]]
+.具有管理程序扩展的特权模式。
+[float="center",align="center",cols="~,~,~,~,~"]
+|===
+^|虚拟化 +
+模式 (V) ^|名义特权 |缩写 |名称 |两阶段转换
+
+^|0 +
+0 +
+0
+^| U +
+S +
+M
+|U 模式 +
+HS 模式 +
+M 模式
+|用户模式 +
+管理程序扩展 supervisor 模式 +
+机器模式
+|关闭 +
+关闭 +
+关闭
+^|1 +
+1
+^|U +
+S
+|VU 模式 +
+VS 模式
+|虚拟用户模式 +
+虚拟 supervisor 模式
+|开启 +
+开启
+|===
+
+对于特权模式 U 和 VU，_名义特权模式_ 为 U，对于特权模式 HS 和 VS，名义特权模式为 S。
+
+HS 模式比 VS 模式具有更高的特权，VS 模式比 VU 模式具有更高的特权。当在 U 模式下执行时，VS 模式中断全局禁用。
+
+[NOTE]
+====
+此描述不考虑 U 模式或 VU 模式中断的可能性，如果采用用户级中断扩展，将进行修订。
+====
+
+=== 管理程序和虚拟 Supervisor CSR
+
+在 HS 模式下运行的操作系统或管理程序使用 supervisor CSR 与异常、中断和地址转换子系统交互。HS 模式（而非 VS 模式）提供了额外的 CSR，用于管理两阶段地址转换和控制 VS 模式客户机的行为：`hstatus`、`hedeleg`、`hideleg`、`hvip`、`hip`、`hie`、`hgeip`、`hgeie`、`henvcfg`、`henvcfgh`、`hcounteren`、`htimedelta`、`htimedeltah`、`htval`、`htinst` 和 `hgatp`。
+
+此外，一些 _虚拟 supervisor_ CSR（VS CSR）是普通 supervisor CSR 的副本。例如，`vsstatus` 是复制了通常 `sstatus` CSR 的 VS CSR。
+
+当 V=1 时，VS CSR 替代相应的 supervisor CSR，接管通常 supervisor CSR 的所有功能，除非另有规定。通常读取或修改 supervisor CSR 的指令将改为访问相应的 VS CSR。当 V=1 时，尝试通过其自己的独立 CSR 地址直接读取或写入 VS CSR 会导致虚拟指令异常。（从 U 模式尝试会导致通常的非法指令异常。）VS CSR 只能从 M 模式或 HS 模式访问。
+
+当 V=1 时，被 VS CSR 替换的普通 HS 级 supervisor CSR 保留其值，但除非明确说明，否则不影响机器行为。相反，当 V=0 时，VS CSR 通常不影响机器行为，除了可以通过 CSR 指令读写。
+
+一些标准 supervisor CSR（`senvcfg`、`scounteren` 和 `scontext`，可能还有其他）没有匹配的 VS CSR。即使当 V=1 时，这些 supervisor CSR 仍继续具有其通常的功能和可访问性，只是 VS 模式和 VU 模式替代了 HS 模式和 U 模式。管理程序软件应根据需要手动交换这些寄存器的内容。
+
+[NOTE]
+====
+匹配的 VS CSR 仅存在于必须复制的 supervisor CSR，这些 CSR 主要是在陷阱时自动写入或在陷阱进入后和/或 SRET 之前立即影响指令执行的 CSR，此时仅靠软件无法在恰当的时机交换 CSR。目前，大多数 supervisor CSR 属于此类别，但未来的可能不属于。
+====
+
+在本章中，我们使用术语 _HSXLEN_ 指在 HS 模式下执行时的有效 XLEN，使用 _VSXLEN_ 指在 VS 模式下执行时的有效 XLEN。
+
+[[sec:hstatus]]
+==== 管理程序状态 (`hstatus`) 寄存器
+
+`hstatus` 寄存器是一个 HSXLEN 位读/写寄存器，当 HSXLEN=32 时格式如 <<hstatusreg-rv32>> 所示，当 HSXLEN=64 时格式如 <<hstatusreg>> 所示。`hstatus` 寄存器提供了类似于 `mstatus` 寄存器的功能，用于跟踪和控制 VS 模式客户机的异常行为。
+
+[[hstatusreg-rv32]]
+.HSXLEN=32 时的管理程序状态寄存器 (`hstatus`)
+[wavedrom,, svg]
+....
+{reg: [
+  {bits:  5, name: 'WPRI'},
+  {bits:  1, name: 'VSBE'},
+  {bits:  1, name: 'GVA'},
+  {bits:  1, name: 'SPV'},
+  {bits:  1, name: 'SPVP'},
+  {bits:  1, name: 'HU'},
+  {bits:  2, name: 'WPRI'},
+  {bits:  6, name: 'VGEIN'},
+  {bits:  2, name: 'WPRI'},
+  {bits:  1, name: 'VTVM'},
+  {bits:  1, name: 'VTW'},
+  {bits:  1, name: 'VTSR'},
+  {bits:  9, name: 'WPRI'},
+], config:{lanes: 2, hspace:1024}}
+....
+
+[[hstatusreg]]
+.HSXLEN=64 时的管理程序状态寄存器 (`hstatus`)。
+[wavedrom,, svg]
+....
+{reg: [
+  {bits:  5, name: 'WPRI'},
+  {bits:  1, name: 'VSBE'},
+  {bits:  1, name: 'GVA'},
+  {bits:  1, name: 'SPV'},
+  {bits:  1, name: 'SPVP'},
+  {bits:  1, name: 'HU'},
+  {bits:  2, name: 'WPRI'},
+  {bits:  6, name: 'VGEIN'},
+  {bits:  2, name: 'WPRI'},
+  {bits:  1, name: 'VTVM'},
+  {bits:  1, name: 'VTW'},
+  {bits:  1, name: 'VTSR'},
+  {bits:  9, name: 'WPRI'},
+  {bits:  2, name: 'VSXL'},
+  {bits: 14, name: 'WPRI'},
+  {bits:  2, name: 'HUPMM'},
+  {bits: 14, name: 'WPRI'},
+], config:{lanes: 4, hspace:1024}}
+....
+
+VSXL 字段控制 VS 模式的有效 XLEN（称为 VSXLEN），它可能与 HS 模式的 XLEN（HSXLEN）不同。当 HSXLEN=32 时，VSXL 字段不存在，VSXLEN=32。当 HSXLEN=64 时，VSXL 是一个 *WARL* 字段，其编码与 `misa` 的 MXL 字段相同，如 <<misabase>> 所示。特别是，实现可以使 VSXL 成为一个只读字段，其值始终确保 VSXLEN=HSXLEN。
+
+如果 HSXLEN 从 32 更改为更宽的宽度，并且如果字段 VSXL 不限于单个值，则它将获得对应于不超过新 HSXLEN 的最宽支持宽度的值。
+
+`hstatus` 字段 VTSR、VTW 和 VTVM 的定义类似于 `mstatus` 字段 TSR、TW 和 TVM，但仅影响 VS 模式下的执行，并引发虚拟指令异常而不是非法指令异常。当 VTSR=1 时，在 VS 模式下尝试执行 SRET 会引发虚拟指令异常。当 VTW=1（并假设 `mstatus`.TW=0）时，在 VS 模式下尝试执行 WFI 会引发虚拟指令异常，如果 WFI 未在实现定义的有界时间限制内完成。当 VTW=1（和 `mstatus`.TW=0）时，即使在执行指令时存在全局禁用的中断，实现也可以使 WFI 始终在 VS 模式下引发虚拟指令异常。当 VTVM=1 时，在 VS 模式下尝试执行 SFENCE.VMA 或 SINVAL.VMA 或访问 CSR `satp` 会引发虚拟指令异常。
+
+VGEIN（虚拟客户机外部中断号）字段选择 VS 级外部中断的客户机外部中断源。VGEIN 是一个 *WLRL* 字段，必须能够容纳零到最大客户机外部中断号（称为 GEILEN）之间的值（包括两者）。当 VGEIN=0 时，未选择 VS 级外部中断的客户机外部中断源。GEILEN 可以为零，在这种情况下 VGEIN 可以是只读零。客户机外部中断在 <<hgeinterruptregs>> 中解释，VGEIN 的使用在 <<hinterruptregs>> 中进一步介绍。
+
+字段 HU（U 模式下的管理程序）控制虚拟机关联的加载/存储指令 HLV、HLVX 和 HSV 是否也可以在 U 模式下使用。当 HU=1 时，这些指令可以在 U 模式下像在 HS 模式下一样执行。当 HU=0 时，所有管理程序指令在 U 模式下都会导致非法指令异常。
+
+[NOTE]
+====
+HU 位允许管理程序的一部分在 U 模式下运行，以提供更大的软件错误保护，同时仍保留对虚拟机内存的访问。
+====
+
+SPV 位（Supervisor Previous Virtualization mode）在每次陷阱进入 HS 模式时由实现写入。就像 `sstatus` 中的 SPP 位设置为陷阱时的（名义）特权模式一样，`hstatus` 中的 SPV 位设置为陷阱时虚拟化模式 V 的值。当 V=0 时执行 SRET 指令时，V 设置为 SPV。
+
+当 V=1 且陷阱进入 HS 模式时，SPVP 位（Supervisor Previous Virtual Privilege）设置为陷阱时的名义特权模式，与 `sstatus`.SPP 相同。但如果陷阱前 V=0，则 SPVP 在陷阱进入时保持不变。SPVP 控制虚拟机关联的加载/存储指令 HLV、HLVX 和 HSV 执行的显式内存访问的有效特权。
+
+[NOTE]
+====
+如果没有 SPVP，如果指令 HLV、HLVX 和 HSV 转而查看 `sstatus`.SPP 以获取其内存访问的有效特权，那么，即使 HU=1，U 模式也无法在 VS 级别访问虚拟机内存，因为使用 SRET 进入 U 模式总是使 SPP=0。与 SPP 不同，SPVP 字段不受 HS 模式和 U 模式之间来回转换的影响。
+====
+
+字段 GVA（客户机虚拟地址）在每次陷阱进入 HS 模式时由实现写入。对于任何将客户机虚拟地址写入 `stval` 的陷阱（断点、地址未对齐、访问故障、页故障或客户机页故障），GVA 设置为 1。对于任何其他进入 HS 模式的陷阱，GVA 设置为 0。
+
+[NOTE]
+====
+对于将非零值写入 `stval` 的断点和内存访问陷阱，GVA 与字段 SPV 是冗余的（两个位设置相同），除非 HLV、HLVX 或 HSV 指令的显式内存访问导致故障。在这种情况下，SPV=0 但 GVA=1。
+====
+
+VSBE 位是一个 *WARL* 字段，控制从 VS 模式进行的显式内存访问的字节序。如果 VSBE=0，从 VS 模式进行的显式加载和存储内存访问是小端序，如果 VSBE=1，它们是大端序。VSBE 还控制所有对 VS 级内存管理数据结构（例如页表）的隐式访问的字节序。实现可以使 VSBE 成为一个只读字段，该字段始终指定与 HS 模式相同的字节序。
+
+==== 管理程序陷阱委托 (`hedeleg` 和 `hideleg`) 寄存器
+
+寄存器 `hedeleg` 是一个 64 位读/写寄存器，格式如 <<hedelegreg>> 所示。
+寄存器 `hideleg` 是一个 HSXLEN 位读/写寄存器，格式如 <<hidelegreg>> 所示。
+默认情况下，任何特权级别的所有陷阱都在 M 模式下处理，尽管 M 模式通常使用 `medeleg` 和 `mideleg` CSR 将一些陷阱委托给 HS 模式。`hedeleg` 和 `hideleg` CSR 允许这些陷阱进一步委托给 VS 模式客户机；它们的布局与 `medeleg` 和 `mideleg` 相同。
+
+[[hedelegreg]]
+.管理程序异常委托寄存器 (`hedeleg`)。
+include::images/bytefield/hedelegreg.edn[]
+
+[[hidelegreg]]
+.管理程序异常委托寄存器 (`hideleg`)。
+include::images/bytefield/hidelegreg.edn[]
+
+如果 V=1 且相应的 `hedeleg` 位已设置，则已委托给 HS 模式的同步陷阱（使用 `medeleg`）将进一步委托给 VS 模式。`hedeleg` 的每个位都应是可写或只读零。`hedeleg` 的许多位都要求是可写或零，如 <<hedeleg-bits>> 中所列。位 0，对应于指令地址未对齐异常，如果 IALIGN=32，则必须是可写的。
+
+[NOTE]
+====
+要求 `hedeleg` 的某些位可写，可以减轻管理程序处理实现变体的负担。
+====
+
+当 XLEN=32 时，`hedelegh` 是一个 32 位读/写寄存器，它与 `hedeleg` 的 63:32 位别名。
+当 XLEN=64 时，寄存器 `hedelegh` 不存在。
+
+如果相应的 `hideleg` 位已设置，则已委托给 HS 模式的中断（使用 `mideleg`）将进一步委托给 VS 模式。在 `hideleg` 的 15:0 位中，位 10、6 和 2（对应于标准 VS 级中断）是可写的，位 12、9、5 和 1（对应于标准 S 级中断）是只读零。
+
+当虚拟 supervisor 外部中断（代码 10）委托给 VS 模式时，机器会自动将其转换为 VS 模式的 supervisor 外部中断（代码 9），包括中断陷阱时写入 `vscause` 的值。同样，虚拟 supervisor 定时器中断（6）转换为 VS 模式的 supervisor 定时器中断（5），虚拟 supervisor 软件中断（2）转换为 VS 模式的 supervisor 软件中断（1）。对于平台中断原因（代码 16 及以上），可能进行或不进行类似的转换。
+
+[[hedeleg-bits]]
+.`hedeleg` 中必须可写或必须只读零的位。
+[%autowidth,float="center",align="center",cols=">,<,<",options="header"]
+|===
+|位 |属性 |对应异常
+|0 +
+1 +
+2 +
+3 +
+4 +
+5 +
+6 +
+7 +
+8 +
+9 +
+10 +
+11 +
+12 +
+13 +
+15 +
+16 +
+18 +
+19 +
+20 +
+21 +
+22 +
+23
+|(参见文本) +
+可写 +
+可写 +
+可写 +
+可写 +
+可写 +
+可写 +
+可写 +
+可写 +
+只读 0 +
+只读 0 +
+只读 0 +
+可写 +
+可写 +
+可写 +
+只读 0 +
+可写 +
+可写 +
+只读 0 +
+只读 0 +
+只读 0 +
+只读 0
+|指令地址未对齐 +
+指令访问故障 +
+非法指令 +
+断点 +
+加载地址未对齐 +
+加载访问故障 +
+存储/AMO 地址未对齐 +
+存储/AMO 访问故障 +
+来自 U 模式或 VU 模式的环境调用 +
+来自 HS 模式的环境调用 +
+来自 VS 模式的环境调用 +
+来自 M 模式的环境调用 +
+指令页故障 +
+加载页故障 +
+存储/AMO 页故障 +
+双重陷阱 +
+软件检查 +
+硬件错误 +
+指令客户机页故障 +
+加载客户机页故障 +
+虚拟指令 +
+存储/AMO 客户机页故障
+|===
+
+[[hinterruptregs]]
+==== 管理程序中断 (`hvip`、`hip` 和 `hie`) 寄存器
+
+寄存器 `hvip` 是一个 HSXLEN 位读/写寄存器，管理程序可以写入该寄存器以指示针对 VS 模式的虚拟中断。`hvip` 中不可写的位是只读零。
+
+[[hvipreg]]
+.管理程序虚拟中断待处理寄存器 (`hvip`)。
+include::images/bytefield/hvipreg.edn[]
+
+`hvip` 的标准部分（位 15:0）的格式如 <<hvipreg-standard>> 所示。`hvip` 的 VSEIP、VSTIP 和 VSSIP 位是可写的。在 `hvip` 中设置 VSEIP=1 会断言 VS 级外部中断；设置 VSTIP 会断言 VS 级定时器中断；设置 VSSIP 会断言 VS 级软件中断。
+
+[[hvipreg-standard]]
+.`hvip` 的标准部分（位 15:0）。
+include::images/bytefield/hvipreg-standard.edn[]
+
+寄存器 `hip` 和 `hie` 是 HSXLEN 位读/写寄存器，分别补充了 HS 级的 `sip` 和 `sie`。`hip` 寄存器指示待处理的 VS 级和管理程序特定中断，而 `hie` 包含相同中断的使能位。
+
+[[hipreg]]
+.管理程序中断待处理寄存器 (`hip`)。
+include::images/bytefield/hipreg.edn[]
+
+[[hiereg]]
+.管理程序中断使能寄存器 (`hie`)。
+include::images/bytefield/hiereg.edn[]
+
+对于 `sie` 中每个可写的位，`hip` 和 `hie` 中相应的位应为只读零。因此，`sie` 和 `hie` 中的非零位总是互斥的，`sip` 和 `hip` 也是如此。
+
+[NOTE]
+====
+`hip` 和 `hie` 的活动位不能放在 HS 级的 `sip` 和 `sie` 中，因为这样做将使软件无法在未在硬件中实现管理程序扩展的平台上模拟管理程序扩展。
+====
+
+当中断 _i_ 满足以下所有条件时，它将陷阱到 HS 模式：(a) 当前操作模式是 HS 模式且 `sstatus` 寄存器中的 SIE 位已设置，或者当前操作模式的特权低于 HS 模式；(b) `sip` 和 `sie` 中，或 `hip` 和 `hie` 中，位 _i_ 都已设置；(c) `hideleg` 中位 _i_ 未设置。
+
+如果 `sie` 的位 _i_ 是只读零，则 `hip` 寄存器中相同的位可以是可写或只读。当 `hip` 中位 _i_ 可写时，可以通过将此位写入 0 来清除待处理中断 _i_。如果中断 _i_ 可以在 `hip` 中变为待处理，但 `hip` 中位 _i_ 是只读的，则可以通过清除 `hvip` 的位 _i_ 来清除中断，或者实现必须提供其他机制来清除待处理中断（可能涉及调用执行环境）。
+
+如果相应的中断可以在 `hip` 中变为待处理，则 `hie` 中的位应是可写的。`hie` 中不可写的位应是只读零。
+
+寄存器 `hip` 和 `hie` 的标准部分（位 15:0）的格式分别如 <<hipreg-standard>> 和 <<hiereg-standard>> 所示。
+
+[[hipreg-standard]]
+.`hip` 的标准部分（位 15:0）。
+include::images/bytefield/hipreg-standard.edn[]
+
+[[hiereg-standard]]
+.`hie` 的标准部分（位 15:0）。
+include::images/bytefield/hiereg-standard.edn[]
+
+
+`hip`.SGEIP 和 `hie`.SGEIE 位是 supervisor 级别（HS 级别）客户机外部中断的中断待处理和中断使能位。SGEIP 在 `hip` 中是只读的，并且当且仅当 CSR `hgeip` 和 `hgeie` 的按位逻辑与在任何位中非零时才为 1。（参见 <<hgeinterruptregs>>。）
+
+`hip`.VSEIP 和 `hie`.VSEIE 位是 VS 级外部中断的中断待处理和中断使能位。VSEIP 在 `hip` 中是只读的，并且是这些中断源的逻辑或：
+
+* `hvip` 的 VSEIP 位；
+* `hstatus`.VGEIN 选择的 `hgeip` 位；以及
+* 任何其他指向 VS 级的平台特定外部中断信号。
+
+`hip`.VSTIP 和 `hie`.VSTIE 位是 VS 级定时器中断的中断待处理和中断使能位。VSTIP 在 `hip` 中是只读的，并且是 `hvip`.VSTIP 和任何其他指向 VS 级的平台特定定时器中断信号的逻辑或。
+
+`hip`.VSSIP 和 `hie`.VSSIE 位是 VS 级软件中断的中断待处理和中断使能位。`hip` 中的 VSSIP 是 `hvip` 中相同位的别名（可写）。
+
+同时针对 HS 模式的多个中断按以下递减优先级顺序处理：SEI、SSI、STI、SGEI、VSEI、VSSI、VSTI、LCOFI。
+
+[[hgeinterruptregs]]
+==== 管理程序客户机外部中断寄存器 (`hgeip` 和 `hgeie`)
+
+`hgeip` 寄存器是一个 HSXLEN 位只读寄存器，格式如 <<hgeipreg>> 所示，指示此 hart 的待处理客户机外部中断。`hgeie` 寄存器是一个 HSXLEN 位读/写寄存器，格式如 <<hgeiereg>> 所示，包含此 hart 的客户机外部中断的使能位。客户机外部中断号 _i_ 对应于 `hgeip` 和 `hgeie` 中的位 _i_。
+
+[[hgeipreg]]
+.管理程序客户机外部中断待处理寄存器 (`hgeip`)。
+include::images/bytefield/hgeipreg.edn[]
+
+
+[[hgeiereg]]
+.管理程序客户机外部中断使能寄存器 (`hgeie`)。
+include::images/bytefield/hgeiereg.edn[]
+
+客户机外部中断表示指向 VS 级单个虚拟机的中断。如果 RISC-V 平台支持在最小管理程序干预下将物理设备置于客户操作系统直接控制之下（称为虚拟机与物理设备之间的 _直通_ 或 _直接分配_），则在这种情况下，来自设备的中断旨在针对特定的虚拟机。`hgeip` 的每个位都总结了指向一个虚拟 hart 的 _所有_ 待处理中断，由中断控制器收集和报告。为了区分来自多个设备的特定待处理中断，软件必须查询中断控制器。
+
+[NOTE]
+====
+支持客户机外部中断需要一个中断控制器，该控制器可以独立于其他中断收集指向虚拟机的中断。
+====
+
+`hgeip` 和 `hgeie` 中为客户机外部中断实现的位数是未指定的，可以为零。这个数字称为 _GEILEN_。最低有效位首先实现，除了位 0。因此，如果 GEILEN 非零，则 `hgeie` 中的位 GEILEN:1 应是可写的，并且所有其他位位置在 `hgeip` 和 `hgeie` 中应是只读零。
+
+[NOTE]
+====
+在一个物理 hart 接收和处理的客户机外部中断集可能与其他 hart 接收的有所不同。在一个物理 hart 的客户机外部中断号 _i_ 通常不期望与任何其他 hart 的客户机外部中断 _i_ 相同。
+对于任何一个物理 hart，可以直接接收客户机外部中断的虚拟 hart 的最大数量受 GEILEN 限制。对于任何实现，此最大数量对于 RV32 为 31，对于 RV64 为 63，每个物理 hart。
+
+管理程序始终可以自由地为任意数量的虚拟 hart _模拟_ 设备，而不受 GEILEN 限制。只有中断的直接直通（直接分配）受 GEILEN 限制的影响，并且该限制是针对接收此类中断的虚拟 hart 的数量，而不是接收到的不同中断的数量。单个虚拟 hart 可以接收的不同中断数量由中断控制器确定。
+====
+
+寄存器 `hgeie` 选择导致 supervisor 级（HS 级）客户机外部中断的客户机外部中断子集。`hgeie` 中的使能位不影响 `hstatus`.VGEIN 选择的 VS 级外部中断信号。
+
+[[sec:henvcfg]]
+==== 管理程序环境配置寄存器 (`henvcfg`)
+
+`henvcfg` CSR 是一个 64 位读/写寄存器，格式如 <<henvcfg>> 所示，用于控制虚拟化模式 V=1 时执行环境的某些特性。
+
+[[henvcfg]]
+.管理程序环境配置寄存器 (`henvcfg`)。
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  1, name: 'FIOM'},
+  {bits:  1, name: 'WPRI'},
+  {bits:  1, name: 'LPE'},
+  {bits:  1, name: 'SSE'},
+  {bits:  2, name: 'CBIE'},
+  {bits:  1, name: 'CBCFE'},
+  {bits:  1, name: 'CBZE'},
+  {bits: 24, name: 'WPRI'},
+  {bits:  2, name: 'PMM'},
+  {bits: 25, name: 'WPRI'},
+  {bits:  1, name: 'DTE'},
+  {bits:  1, name: 'WPRI'},
+  {bits:  1, name: 'ADUE'},
+  {bits:  1, name: 'PBMTE'},
+  {bits:  1, name: 'STCE'},
+], config:{lanes: 4, hspace:1024}}
+....
+
+如果 `henvcfg` 中的位 FIOM（I/O 的栅栏意味着内存）设置为 1，则当 V=1 时执行的 FENCE 指令将被修改，以便对设备 I/O 访问进行排序的要求也意味着对主内存访问进行排序的要求。<<henvcfg-FIOM>> 详细说明了当 FIOM=1 且 V=1 时 FENCE 指令位 PI、PO、SI 和 SO 的修改解释。
+
+同样，当 FIOM=1 且 V=1 时，如果访问设备 I/O 区域的原子指令设置了 _aq_ 和/或 _rl_ 位，则该指令的排序就像它同时访问设备 I/O 和内存一样。
+
+[[henvcfg-FIOM]]
+.当 FIOM=1 且虚拟化模式 V=1 时 FENCE 前驱和后继集的修改解释。
+[%autowidth,float="center",align="center",cols="^,<",options="header"]
+|===
+|指令位 |设置时的含义
+|PI +
+PO
+|前驱设备输入和内存读取（隐含 PR） +
+前驱设备输出和内存写入（隐含 PW）
+|SI +
+SO
+|后继设备输入和内存读取（隐含 SR） +
+后继设备输出和内存写入（隐含 SW）
+|===
+
+PBMTE 位控制 Svpbmt 扩展是否可用于 VS 阶段地址转换。当 PBMTE=1 时，Svpbmt 可用于 VS 阶段地址转换。当 PBMTE=0 时，实现的行为就像 Svpbmt 未为 VS 阶段地址转换实现一样。如果未实现 Svpbmt，则 PBMTE 为只读零。
+
+如果实现了 Svadu 扩展，ADUE 位控制是否为 VS 阶段地址转换启用 PTE A/D 位的硬件更新。当 ADUE=1 时，在 VS 阶段地址转换期间启用 PTE A/D 位的硬件更新，并且实现的行为就像 Svade 扩展未为 VS 模式地址转换实现一样。当 ADUE=0 时，实现的行为就像 Svade 已为 VS 阶段地址转换实现一样。如果未实现 Svadu，则 ADUE 为只读零。
+
+STCE 字段的定义由 Sstc 扩展提供。
+
+CBZE 字段的定义由 Zicboz 扩展提供。
+
+CBCFE 和 CBIE 字段的定义由 Zicbom 扩展提供。
+
+PMM 字段的定义由 Ssnpm 扩展提供。
+
+Zicfilp 扩展在 `henvcfg` 中添加了 `LPE` 字段。当 `LPE` 字段设置为 1 时，Zicfilp 扩展在 VS 模式下启用。当 `LPE` 字段为 0 时，Zicfilp 扩展在 VS 模式下未启用，并且以下规则适用于 VS 模式：
+
+* hart 不更新 `ELP` 状态；它保持为 `NO_LP_EXPECTED`。
+* `LPAD` 指令作为空操作执行。
+
+Zicfiss 扩展在 `henvcfg` 中添加了 `SSE` 字段。如果 `SSE` 字段设置为 1，则 Zicfiss 扩展在 VS 模式下激活。当 `SSE` 字段为 0 时，Zicfiss 扩展在 VS 模式下保持非活动状态，并且当 `V=1` 时适用以下规则：
+
+* 32 位 Zicfiss 指令将恢复其由 Zimop 定义的行为。
+* 16 位 Zicfiss 指令将恢复其由 Zcmop 定义的行为。
+* VS 阶段页表中的 `pte.xwr=010b` 编码变为保留。
+* `senvcfg.SSE` 字段将读取为零且为只读。
+* 当 `menvcfg.SSE` 为 1 时，`SSAMOSWAP.W/D` 会引发虚拟指令异常。
+
+Ssdbltrp 扩展在 `henvcfg` 中添加了双重陷阱使能 (`DTE`) 字段。当 `henvcfg.DTE` 为零时，实现的行为就像 Ssdbltrp 未为 VS 模式实现一样，并且 `vsstatus.SDT` 位为只读零。
+
+当 XLEN=32 时，`henvcfgh` 是一个 32 位读/写寄存器，它与 `henvcfg` 的 63:32 位别名。
+当 XLEN=64 时，寄存器 `henvcfgh` 不存在。
+
+==== 管理程序计数器使能 (`hcounteren`) 寄存器
+
+计数器使能寄存器 `hcounteren` 是一个 32 位寄存器，控制硬件性能监控计数器对客户机虚拟机的可用性。
+
+.管理程序计数器使能寄存器 (`hcounteren`)。
+include::images/bytefield/hcounterenreg.edn[]
+
+当 `hcounteren` 寄存器中的 CY、TM、IR 或 HPM_n_ 位清除时，当 V=1 且 `mcounteren` 中相同位为 1 时，尝试读取 `cycle`、`time`、`instret` 或 `hpmcounter` _n_ 寄存器将导致虚拟指令异常。当这些位中的一个设置时，当 V=1 时允许访问相应的寄存器，除非因其他原因被阻止。在 VU 模式下，除非 `hcounteren` 和 `scounteren` 中设置了适用位，否则计数器不可读。
+
+`hcounteren` 必须实现。但是，任何位都可以是只读零，表示当 V=1 时，读取相应的计数器将导致异常。因此，它们实际上是 *WARL* 字段。
+
+==== 管理程序时间增量 (`htimedelta`) 寄存器
+
+`htimedelta` CSR 是一个 64 位读/写寄存器，包含 `time` CSR 的值与在 VS 模式或 VU 模式下返回的值之间的增量。也就是说，在 VS 或 VU 模式下读取 `time` CSR 会返回 `htimedelta` 的内容与 `time` 的实际值之和。
+
+[NOTE]
+====
+由于在 `htimedelta` 和 `time` 求和时忽略溢出，因此 `htimedelta` 的大值可用于表示负时间偏移。
+====
+
+.管理程序时间增量寄存器。
+include::images/bytefield/htimedelta.edn[]
+
+当 XLEN=32 时，`htimedeltah` 是一个 32 位读/写寄存器，它与 `htimedelta` 的 63:32 位别名。
+当 XLEN=64 时，寄存器 `htimedeltah` 不存在。
+
+如果实现了 `time` CSR，则必须实现 `htimedelta`（以及 XLEN=32 时的 `htimedeltah`）。
+
+==== 管理程序陷阱值 (`htval`) 寄存器
+
+`htval` 寄存器是一个 HSXLEN 位读/写寄存器，格式如 <<htvalreg>> 所示。当陷阱进入 HS 模式时，`htval` 会写入额外的异常特定信息，与 `stval` 一起，以帮助软件处理陷阱。
+
+[[htvalreg]]
+.管理程序陷阱值寄存器 (`htval`)。
+include::images/bytefield/htvalreg.edn[]
+
+当客户机页故障陷阱进入 HS 模式时，`htval` 会写入零或故障的客户机物理地址，右移 2 位。对于其他陷阱，`htval` 设置为零，但未来的标准或扩展可能会重新定义 `htval` 对其他陷阱的设置。
+
+客户机页故障可能由于第一阶段（VS 阶段）地址转换期间的隐式内存访问而发生，在这种情况下，写入 `htval` 的客户机物理地址是发生故障的隐式内存访问的地址——例如，无法读取的 VS 级页表条目的地址。（当 VS 阶段转换失败时，与原始虚拟地址对应的客户机物理地址是未知的。）CSR `htinst` 中提供了额外信息以消除此类情况的歧义。
+
+否则，对于导致客户机页故障的未对齐加载和存储，`htval` 中的非零客户机物理地址对应于访问的故障部分，如 `stval` 中的虚拟地址所示。
+对于具有可变长度指令的系统上的指令客户机页故障，非零 `htval` 对应于指令的故障部分，如 `stval` 中的虚拟地址所示。
+
+[NOTE]
+====
+写入 `htval` 的客户机物理地址右移 2 位，以适应比当前 XLEN 更宽的地址。对于 RV32，管理程序扩展允许客户机物理地址宽达 34 位，`htval` 报告地址的 33:2 位。这种客户机物理地址的移位 2 编码与 PMP 地址寄存器（<<pmp>>）和页表条目（<<sv32>>、<<sv39>>、<<sv48>> 和 <<sv57>>）中物理地址的编码匹配。
+
+如果需要故障客户机物理地址的最低有效两位，这些位通常与 `stval` 中故障虚拟地址的最低有效两位相同。对于由于 VS 阶段地址转换的隐式内存访问导致的故障，最低有效两位改为零。这些情况可以使用 `htinst` 寄存器中提供的值来区分。
+====
+
+`htval` 是一个 *WARL* 寄存器，它必须能够容纳零，并且可能只能容纳其他 2 位移位客户机物理地址的任意子集（如果有）。
+
+[NOTE]
+====
+除非有理由假设其他情况（例如平台标准），否则写入 `htval` 的软件应从 `htval` 中读回以确认存储的值。
+====
+
+==== 管理程序陷阱指令 (`htinst`) 寄存器
+
+`htinst` 寄存器是一个 HSXLEN 位读/写寄存器，格式如 <<htinstreg>> 所示。当陷阱进入 HS 模式时，`htinst` 会写入一个值，如果非零，则提供有关陷阱指令的信息，以帮助软件处理陷阱。陷阱时可能写入 `htinst` 的值记录在 <<tinst-vals>> 中。
+
+[[htinstreg]]
+.管理程序陷阱指令 (`htinst`) 寄存器。
+include::images/bytefield/htinstreg.edn[]
+
+`htinst` 是一个 *WARL* 寄存器，它只需要能够容纳实现可能在陷阱时自动写入它的值。
+
+[[hgatp]]
+==== 管理程序客户机地址转换和保护 (`hgatp`) 寄存器
+
+`hgatp` 寄存器是一个 HSXLEN 位读/写寄存器，格式如 HSXLEN=32 时的 <<rv32hgatp>> 和 HSXLEN=64 时的 <<rv64hgatp>> 所示，它控制 G 阶段地址转换和保护，即客户机虚拟地址的两阶段转换的第二阶段（参见 <<two-stage-translation>>）。与 CSR `satp` 类似，该寄存器保存客户机物理根页表的物理页号 (PPN)；一个虚拟机标识符 (VMID)，用于促进基于每个虚拟机的地址转换栅栏；以及 MODE 字段，该字段选择客户机物理地址的地址转换方案。当 `mstatus`.TVM=1 时，在 HS 模式下执行时尝试读取或写入 `hgatp` 将引发非法指令异常。
+
+[[rv32hgatp]]
+.HSXLEN=32 时的管理程序客户机地址转换和保护寄存器 `hgatp`。
+include::images/bytefield/rv32hgatp.edn[]
+
+[[rv64hgatp]]
+.HSXLEN=64 时，MODE 值为 Bare、Sv39x4、Sv48x4 和 Sv57x4 的管理程序客户机地址转换和保护寄存器 `hgatp`。
+include::images/bytefield/rv64hgatp.edn[]
+
+<<hgatp-mode>> 显示了 HSXLEN=32 和 HSXLEN=64 时 MODE 字段的编码。当 MODE=Bare 时，客户机物理地址等于 supervisor 物理地址，并且在客户机物理地址到 supervisor 物理地址的简单转换中没有进一步的内存保护，超出 <<pmp>> 中描述的物理内存保护方案。在这种情况下，软件必须将零写入 `hgatp` 中的其余字段。尝试使用非零模式选择 MODE=Bare 会对其余字段的值产生未指定的影响，并对 G 阶段地址转换和保护行为产生未指定的影响。
+
+当 HSXLEN=32 时，MODE 的唯一其他有效设置是 Sv32x4，它是通常的 Sv32 页式虚拟内存方案的修改，扩展以支持 34 位客户机物理地址。当 HSXLEN=64 时，Sv39x4、Sv48x4 和 Sv57x4 模式被定义为 Sv39、Sv48 和 Sv57 页式虚拟内存方案的修改。所有这些页式虚拟内存方案都在 <<guest-addr-translation>> 中描述。
+
+当 HSXLEN=64 时，其余 MODE 设置保留供将来使用，并且可能定义 `hgatp` 中其他字段的不同解释。
+
+[[hgatp-mode]]
+.`hgatp` MODE 字段的编码。
+[%autowidth,float="center",align="center",cols="^,^,<",options="header"]
+|===
+3+|HSXLEN=32
+|值 |名称 |描述
+|0 +
+1
+|Bare +
+Sv32x4
+|无转换或保护。 +
+基于页的 34 位虚拟寻址（Sv32 的 2 位扩展）。
+3+s|HSXLEN=64
+|值 |名称 |描述
+|0 +
+1-7 +
+8 +
+9 +
+10 +
+11-15
+|Bare +
+— +
+Sv39x4 +
+Sv48x4 +
+Sv57x4 +
+—
+|无转换或保护。 +
+_保留_ +
+基于页的 41 位虚拟寻址（Sv39 的 2 位扩展）。 +
+基于页的 50 位虚拟寻址（Sv48 的 2 位扩展）。 +
+基于页的 59 位虚拟寻址（Sv57 的 2 位扩展）。 +
+_保留_
+|===
+
+当 HSXLEN=64 时，不要求实现支持所有定义的 MODE 设置。
+
+写入 `hgatp` 的不支持 MODE 值不会像 `satp` 那样被忽略。相反，`hgatp` 的字段以通常的方式作为 *WARL* 处理，如果如此指示。
+
+如 <<guest-addr-translation>> 中所解释，对于页式虚拟内存方案（Sv32x4、Sv39x4、Sv48x4 和 Sv57x4），根页表为 16 KiB，并且必须对齐到 16 KiB 边界。在这些模式下，`hgatp` 中物理页号 (PPN) 的最低两位始终读取为零。仅支持已定义页式虚拟内存方案和/或 Bare 的实现可以使 PPN[1:0] 只读零。
+
+VMID 位的数量是未指定的，可以为零。已实现的 VMID 位的数量，称为 _VMIDLEN_，可以通过将 1 写入 VMID 字段中的每个位位置，然后读回 `hgatp` 中的值以查看 VMID 字段中哪些位位置保持为 1 来确定。VMID 的最低有效位首先实现：也就是说，如果 VMIDLEN > 0，则 VMID[VMIDLEN-1:0] 是可写的。VMIDLEN 的最大值，称为 VMIDMAX，对于 Sv32x4 为 7，对于 Sv39x4、Sv48x4 和 Sv57x4 为 14。
+
+`hgatp` 寄存器被视为 _活动_，用于地址转换算法，_除非_ 有效特权模式是 U 且 `hstatus`.HU=0。
+
+[NOTE]
+====
+此定义简化了 HLV、HLVX 和 HSV 指令的推测执行的实现。
+====
+
+请注意，写入 `hgatp` 不意味着页表更新和后续 G 阶段地址转换之间有任何排序约束。如果已修改新虚拟机的客户机物理页表，或者如果 VMID 被重用，则可能需要在写入 `hgatp` 之前或之后执行 HFENCE.GVMA 指令（参见 <<hfence.vma>>）。
+
+[[vsstatus]]
+==== 虚拟 Supervisor 状态 (`vsstatus`) 寄存器
+
+`vsstatus` 寄存器是一个 VSXLEN 位读/写寄存器，它是 VS 模式的 supervisor 寄存器 `sstatus` 的版本，格式如 VSXLEN=32 时的 <<vsstatusreg-rv32>> 和 VSXLEN=64 时的 <<vsstatusreg>> 所示。当 V=1 时，`vsstatus` 替代通常的 `sstatus`，因此通常读取或修改 `sstatus` 的指令实际上会访问 `vsstatus`。

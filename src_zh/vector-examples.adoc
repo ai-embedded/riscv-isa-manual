@@ -1,0 +1,124 @@
+[appendix]
+== 向量汇编代码示例
+
+以下作为非规范性文本提供，以帮助解释向量 ISA。
+
+=== 向量-向量加法示例
+
+----
+include::example/vvaddint32.s[lines=4..-1]
+----
+
+=== 混合宽度掩码和计算示例。
+
+----
+# 使用一种宽度用于谓词，不同宽度用于掩码计算。
+#   int8_t a[]; int32_t b[], c[];
+#   for (i=0;  i<n; i++) { b[i] =  (a[i] < 5) ? c[i] : 1; }
+#
+# 混合宽度代码，保持 SEW/LMUL=8
+  loop:
+    vsetvli a4, a0, e8, m1, ta, ma   # 用于谓词计算的字节向量
+    vle8.v v1, (a1)               # 加载 a[i]
+      add a1, a1, a4              # 增加指针。
+    vmslt.vi v0, v1, 5            # a[i] < 5?
+
+    vsetvli x0, a0, e32, m4, ta, mu  # 32 位值的向量。
+      sub a0, a0, a4              # 递减计数
+    vmv.v.i v4, 1                 # 将立即数扩展到目标
+    vle32.v v4, (a3), v0.t        # 加载 C 的请求元素，其他元素不受干扰
+      sll t1, a4, 2
+      add a3, a3, t1              # 增加指针。
+    vse32.v v4, (a2)              # 存储 b[i]。
+      add a2, a2, t1              # 增加指针。
+      bnez a0, loop               # 还有吗？
+----
+
+=== Memcpy 示例
+
+----
+include::example/memcpy.s[lines=4..-1]
+----
+
+=== 条件示例
+
+----
+# (int16) z[i] = ((int8) x[i] < 5) ? (int16) a[i] : (int16) b[i];
+#
+
+loop:
+    vsetvli t0, a0, e8, m1, ta, ma # 使用 8b 元素。
+    vle8.v v0, (a1)         # 获取 x[i]
+      sub a0, a0, t0        # 递减元素计数
+      add a1, a1, t0        # x[i] 增加指针
+    vmslt.vi v0, v0, 5      # 在 v0 中设置掩码
+    vsetvli x0, x0, e16, m2, ta, mu  # 使用 16b 元素。
+      slli t0, t0, 1        # 乘以 2 字节
+    vle16.v v2, (a2), v0.t  # z[i] = a[i] 情况
+    vmnot.m v0, v0          # 反转 v0
+      add a2, a2, t0        # a[i] 增加指针
+    vle16.v v2, (a3), v0.t  # z[i] = b[i] 情况
+      add a3, a3, t0        # b[i] 增加指针
+    vse16.v v2, (a4)        # 存储 z
+      add a4, a4, t0        # z[i] 增加指针
+      bnez a0, loop
+----
+=== SAXPY 示例
+
+----
+include::example/saxpy.s[lines=4..-1]
+----
+
+=== SGEMM 示例
+
+----
+include::example/sgemm.S[lines=4..-1]
+----
+
+=== 除法近似示例
+
+----
+# v1 = v1 / v2，精度接近 23 位。
+
+vfrec7.v v3, v2             # 估计 1/v2
+  li t0, 0x3f800000
+vmv.v.x v4, t0              # 扩展 1.0
+vfnmsac.vv v4, v2, v3       # 1.0 - v2 * est(1/v2)
+vfmadd.vv v3, v4, v3        # 更好的 1/v2 估计
+vmv.v.x v4, t0              # 扩展 1.0
+vfnmsac.vv v4, v2, v3       # 1.0 - v2 * est(1/v2)
+vfmadd.vv v3, v4, v3        # 更好的 1/v2 估计
+vfmul.vv v1, v1, v3         # 估计 v1/v2
+----
+
+=== 平方根近似示例
+
+----
+# v1 = sqrt(v1)，精度超过 23 位。
+
+  fmv.w.x ft0, x0           # 屏蔽零输入
+vmfne.vf v0, v1, ft0        #   以避免 DZ 异常
+vfrsqrt7.v v2, v1, v0.t     # 估计 r ~= 1/sqrt(v1)
+vmfne.vf v0, v2, ft0, v0.t  # 屏蔽 +inf 以避免 NV
+  li t0, 0x3f800000
+  fli.s ft0, 0.5
+vmv.v.x v5, t0              # 扩展 1.0
+vfmul.vv v3, v1, v2, v0.t   # t = v1 r
+vfmul.vf v4, v2, ft0, v0.t  # 0.5 r
+vfmsub.vv v3, v2, v5, v0.t  # t r - 1
+vfnmsac.vv v2, v3, v4, v0.t # r - (0.5 r) (t r - 1)
+                            # 更好的 1/sqrt(v1) 估计
+vfmul.vv v1, v1, v2, v0.t   # t = v1 r
+vfmsub.vv v2, v1, v5, v0.t  # t r - 1
+vfmul.vf v3, v1, ft0, v0.t  # 0.5 t
+vfnmsac.vv v1, v2, v3, v0.t # t - (0.5 t) (t r - 1)
+                            # ~ sqrt(v1) 约 23.3 位
+----
+
+=== C 标准库 strcmp 示例
+
+----
+include::example/strcmp.s[lines=4..-1]
+----
+
+include::fraclmul.adoc[]

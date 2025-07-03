@@ -1,0 +1,290 @@
+[[sec:zilsd]]
+== “Zilsd”、“Zclsd”——RV32 加载/存储对扩展，版本 1.0
+
+Zilsd 和 Zclsd 扩展为 RV32 提供了加载/存储对指令，重用了现有的 RV64 双字加载/存储指令编码。
+
+包含用于存储指令的 `src` 和用于加载指令的 `dest` 的操作数保存在对齐的 `x` 寄存器对中，即寄存器号必须是偶数。对这些操作数使用未对齐（奇数编号）的寄存器是_保留_的。
+
+无论字节序如何，编号较低的寄存器保存低位，编号较高的寄存器保存高位：例如，Zilsd 中操作数的位 31:0 可能保存在寄存器 `x14` 中，该操作数的位 63:32 保存在 `x15` 中。
+
+[[zilsd, Zilsd]]
+=== 加载/存储对指令 (Zilsd)
+
+Zilsd 扩展添加了以下仅限 RV32 的指令：
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+|是
+|否
+|ld rd, offset(rs1)
+|<<#insns-ld>>
+
+|是
+|否
+|sd rs2, offset(rs1)
+|<<#insns-sd>>
+
+|===
+
+由于访问大小为 64 位，因此仅当有效地址是 8 的倍数时，访问才被视为自然对齐。
+在这种情况下，保证这些指令不会引发地址未对齐异常。
+即使自然对齐，内存访问也可能不是原子执行的。
+
+如果有效地址是 4 的倍数，则要求每个字访问都是原子执行的。
+
+下表总结了所需的行为：
+
+[%header]
+|===
+|对齐 |字访问是否保证原子？ |是否会引起未对齐陷阱？
+|8B |是 |否
+|4B 但非 8B |是 |是
+|其他 |否 |是
+|===
+
+为了确保加载指令的可恢复陷阱处理是可能的，如果发生陷阱，基址寄存器必须具有其原始值。该对中的另一个寄存器可以被更新。
+这会影响堆栈指针相对指令的 x2，否则会影响 rs1。
+
+[NOTE]
+====
+如果实现原子地执行双字加载访问，并且寄存器文件为偶数/奇数寄存器对实现写回，则固有地满足了上述原子性要求。
+否则，实现要么需要延迟写回直到可以原子地执行写入，要么需要对寄存器进行顺序写入以确保满足上述要求。
+====
+
+[[zclsd, Zclsd]]
+=== 压缩加载/存储对指令 (Zclsd)
+
+Zclsd 依赖于 Zilsd 和 Zca。它与 Zcf 有重叠的编码，因此与 Zcf 不兼容。
+
+Zclsd 添加了以下仅限 RV32 的指令：
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+|是
+|否
+|c.ldsp rd, offset(sp)
+|<<#insns-cldsp>>
+
+|是
+|否
+|c.sdsp rs2, offset(sp)
+|<<#insns-csdsp>>
+
+|是
+|否
+|c.ld rd', offset(rs1')
+|<<#insns-cld>>
+
+|是
+|否
+|c.sd rs2', offset(rs1')
+|<<#insns-csd>>
+
+|===
+
+=== 使用 x0 作为操作数
+
+目标为 `x0` 的 LD 指令与任何其他加载一样处理，但结果被完全丢弃，并且不写入 x1。
+对于 C.LDSP，使用 `x0` 作为目标是保留的。
+
+如果使用 `x0` 作为 SD 或 C.SDSP 的 `src`，则整个 64 位操作数为零——即，不访问寄存器 `x1`。
+
+C.LD 和 C.SD 指令只能使用 `x8-15`。
+
+=== 异常处理
+
+就 RVWMO 和异常处理而言，LD 和 SD 指令被视为未对齐的加载和存储，但有一个额外的约束：有效地址是 4 的倍数的 LD 或 SD 指令会产生两个 4 字节的内存操作。
+
+注意：此定义允许 LD 和 SD 指令产生恰好一个内存访问，而不管对齐方式如何。
+如果将具有 4 字节对齐有效地址的指令分解为两个 32 位操作，则对执行操作的顺序没有约束，并且保证每个操作都是原子的。
+这些分解的序列是可中断的。
+后续操作可能会发生异常，从而使同一指令内先前操作的效果可见。
+
+注意：除了上面提到的 4 字节约束外，软件不应对这些指令可能产生的访问次数或顺序做任何假设。
+例如，中断的存储可能会在从中断处理程序返回时覆盖相同的字节。
+
+<<<
+
+=== 指令
+[#insns-ld,reftext="加载双字到寄存器对，32 位编码"]
+==== ld
+
+概要：
+加载双字到偶数/奇数寄存器对，32 位编码
+
+助记符：
+ld rd, offset(rs1)
+
+编码 (RV32)：
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits: 7,  name: 0x3,    attr: ['LOAD'], type: 8},
+  {bits: 5,  name: 'rd', attr: ['dest, dest[0]=0'], type: 2},
+  {bits: 3,  name: 0x3, attr: ['width=D'], type: 8},
+  {bits: 5,  name: 'rs1', attr: ['base'], type: 4},
+  {bits: 12, name: 'imm[11:0]', attr: ['offset[11:0]'], type: 3},
+]}
+....
+
+描述：
+将一个 64 位值加载到寄存器 `rd` 和 `rd+1` 中。
+有效地址是通过将寄存器 rs1 与符号扩展的 12 位偏移量相加得到的。
+
+包含在：<<zilsd>>
+
+<<<
+
+[#insns-sd,reftext="从寄存器对存储双字，32 位编码"]
+==== sd
+
+概要：
+从偶数/奇数寄存器对存储双字，32 位编码
+
+助记符：
+sd rs2, offset(rs1)
+
+编码 (RV32)：
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits: 7,  name: 0x23,   attr: ['STORE'], type: 8},
+  {bits: 5,  name: 'imm[4:0]', attr: ['offset[4:0]'], type: 3},
+  {bits: 3,  name: 0x3, attr: ['width=D'], type: 8},
+  {bits: 5,  name: 'rs1', attr: ['base'], type: 4},
+  {bits: 5,  name: 'rs2', attr: ['src, src[0]=0'], type: 4},
+  {bits: 7,  name: 'imm[11:5]', attr: ['offset[11:5]'], type: 3},
+]}
+....
+
+描述：
+从寄存器 `rs2` 和 `rs2+1` 存储一个 64 位值。
+有效地址是通过将寄存器 rs1 与符号扩展的 12 位偏移量相加得到的。
+
+包含在：<<zilsd>>
+
+<<<
+
+[#insns-cldsp,reftext="基于堆栈指针的加载双字到寄存器对，16 位编码"]
+==== c.ldsp
+
+概要：
+基于堆栈指针的加载双字到偶数/奇数寄存器对，16 位编码
+
+助记符：
+c.ldsp rd, offset(sp)
+
+编码 (RV32)：
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits: 2, name: 0x2,      type: 8, attr: ['C2']},
+  {bits: 5, name: 'imm',    type: 3, attr: ['offset[4:3|8:6]']},
+  {bits: 5, name: 'rd',     type: 2, attr: ['dest≠0, dest[0]=0']},
+  {bits: 1, name: 'imm',    type: 3, attr: ['offset[5]']},
+  {bits: 3, name: 0x3,      type: 8, attr: ['C.LDSP']},
+], config: {bits: 16}}
+....
+
+描述：
+将相对于堆栈指针的 64 位值加载到寄存器 `rd'` 和 `rd'+1` 中。它通过将零扩展的偏移量（按 8 缩放）与堆栈指针 `x2` 相加来计算其有效地址。它扩展为 `ld rd, offset(x2)`。C.LDSP 仅在 _rd_&#x2260;x0 时有效；_rd_=x0 的代码点是保留的。
+
+包含在：<<zclsd>>
+
+<<<
+
+[#insns-csdsp,reftext="基于堆栈指针的从寄存器对存储双字，16 位编码"]
+==== c.sdsp
+
+概要：
+基于堆栈指针的从偶数/奇数寄存器对存储双字，16 位编码
+
+助记符：
+c.sdsp rs2, offset(sp)
+
+编码 (RV32)：
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits: 2, name: 0x2,      type: 8, attr: ['C2']},
+  {bits: 5, name: 'rs2',    type: 4, attr: ['src, src[0]=0']},
+  {bits: 6, name: 'imm',    type: 3, attr: ['offset[5:3|8:6]']},
+  {bits: 3, name: 0x7,      type: 8, attr: ['C.SDSP']},
+], config: {bits: 16}}
+....
+
+描述：
+从寄存器 `rs2'` 和 `rs2'+1` 存储一个相对于堆栈指针的 64 位值。它通过将_零_扩展的偏移量（按 8 缩放）与堆栈指针 `x2` 相加来计算有效地址。它扩展为 `sd rs2, offset(x2)`。
+
+包含在：<<zclsd>>
+
+<<<
+
+[#insns-cld,reftext="加载双字到寄存器对，16 位编码"]
+==== c.ld
+
+概要：
+加载双字到偶数/奇数寄存器对，16 位编码
+
+助记符：
+c.ld rd', offset(rs1')
+
+编码 (RV32)：
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits: 2, name: 0x0,       type: 8, attr: ['C0']},
+  {bits: 3, name: 'rd`',     type: 2, attr: ['dest, dest[0]=0']},
+  {bits: 2, name: 'imm',     type: 3, attr: ['offset[7:6]']},
+  {bits: 3, name: 'rs1`',    type: 4, attr: ['base']},
+  {bits: 3, name: 'imm',     type: 3, attr: ['offset[5:3]']},
+  {bits: 3, name: 0x3,       type: 8, attr: ['C.LD']},
+], config: {bits: 16}}
+....
+
+描述：
+将一个 64 位值加载到寄存器 `rd'` 和 `rd'+1` 中。
+它通过将零扩展的偏移量（按 8 缩放）与基址寄存器 rs1' 中的基址相加来计算有效地址。
+
+包含在：<<zclsd>>
+
+<<<
+
+[#insns-csd,reftext="从寄存器对存储双字，16 位编码"]
+==== c.sd
+
+概要：
+从偶数/奇数寄存器对存储双字，16 位编码
+
+助记符：
+c.sd rs2', offset(rs1')
+
+编码 (RV32)：
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits: 2, name: 0x0,      type: 8, attr: ['C0']},
+  {bits: 3, name: 'rs2`',   type: 4, attr: ['src, src[0]=0']},
+  {bits: 2, name: 'imm',    type: 3, attr: ['offset[7:6]']},
+  {bits: 3, name: 'rs1`',   type: 4, attr: ['base']},
+  {bits: 3, name: 'imm',    type: 3, attr: ['offset[5:3]']},
+  {bits: 3, name: 0x7,      type: 8, attr: ['C.SD']},
+], config: {bits: 16}}
+....
+
+描述：
+从寄存器 `rs2'` 和 `rs2'+1` 存储一个 64 位值。
+它通过将零扩展的偏移量（按 8 缩放）与基址寄存器 rs1' 中的基址相加来计算有效地址。
+它扩展为 `sd rs2', offset(rs1')`。
+
+包含在：<<zclsd>>

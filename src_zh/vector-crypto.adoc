@@ -1,0 +1,1813 @@
+== 密码学扩展：向量指令，版本 1.0
+
+本文档描述了 RISC-V 指令集架构的向量密码学扩展。
+
+[[crypto_vector_introduction]]
+=== 引言
+
+本文档描述了 RISC-V _向量_ 密码学扩展。
+此处提出的所有指令都基于向量寄存器。
+这些指令旨在实现高性能，主要目标是大型应用程序和服务器级核心。
+配套章节 _第一卷：标量和熵源指令_，描述了
+不实现向量扩展的小型核心的密码学指令提案。
+
+[[crypto_vector_audience]]
+==== 目标受众
+
+密码学是一个专业领域，需要具有不同背景的人员合作才能安全高效地实现。
+在可能的情况下，我们编写本规范时力求让所有人都能理解，尽管我们认识到，对于非领域专家来说，动机以及对算法或其他规范和标准的引用可能不熟悉。
+
+本规范预计将被具有不同背景的各种人士阅读和采纳。
+我们试图在此处捕捉这些背景，并简要说明我们期望他们了解什么，以及这与规范的关系。
+我们希望这有助于人们理解规范的哪些方面与他们特别相关，以及他们可以（安全地！）忽略或交给同事的方面。
+
+密码学家和密码软件开发人员::
+我们期望这些人使用本规范中的指令编写代码。
+他们应该相当清楚地理解我们包含的指令的动机，并熟悉我们引用的大多数算法和外部标准。
+
+计算机架构师::
+我们不期望架构师具有密码学背景。
+尽管如此，我们仍然期望架构师能够检查我们的指令是否存在实现问题，理解指令将如何在上下文中被使用，并就如何最好地将密码学家想要的功能与 ISA 接口匹配提供建议。
+
+数字设计工程师和微架构师::
+这些人将在核心内部实现规范。同样，不假定具备密码学专业知识，但我们期望他们解释规范并预测任何硬件实现问题，例如，在高频设计考虑适用或存在延迟/面积权衡等情况下。
+特别是，他们应该了解围绕高效实现 AES 和 SM4 SBox 的文献。
+
+验证工程师::
+这些人负责确保硬件中扩展的正确实现。
+不假定具备密码学背景。
+我们期望他们从规范中识别有趣的测试用例。了解其在实际世界中的用法将有助于此。
+
+这些人绝不是唯一关注本规范的人，但他们在我们撰写本规范时是我们考虑最多的人。
+
+[[crypto_vector_sail_specifications]]
+==== Sail 规范
+
+RISC-V 维护一个
+link:https://github.com/riscv/sail-riscv[形式化模型]
+的 ISA 规范，
+使用 Sail ISA 规范语言实现
+cite:[sail]。
+请注意，_Sail_ 指的是规范语言本身，
+并且有一个 _RISC-V 模型_，使用 Sail 编写。
+将“Sail 模型”称为不正确。
+鉴于使用 Sail 实现了许多不同 ISA 的模型，这会产生歧义。
+我们将 RISC-V 的 Sail 实现称为
+“RISC-V Sail 模型”。
+
+我们打算在本规范中包含实际的 Sail 代码。
+然而，向量密码 Sail 模型需要向量 Sail 模型作为构建基础。
+此向量密码学扩展规范在批准 RISC-V 向量 Sail 模型之前完成。
+因此，我们没有在指令描述中包含任何 Sail 代码。
+相反，我们包含了类似 Sail 的伪代码。虽然我们努力遵守 Sail 语法，
+但为了简洁起见，我们采取了一些自由，
+我们相信我们的意图对读者来说是清楚的。
+
+[NOTE]
+====
+当变量连接时，所示顺序是它们在向量寄存器中从左到右的出现顺序。
+例如，指定为 `{a, b, e, f}` 的元素组将出现在向量寄存器中，其中 `a` 具有该组的最高元素索引，`f` 具有该组的最低索引。
+====
+
+为了简洁起见，我们的伪代码不包括对掩码或尾部元素的处理。
+我们遵循 *RISC-V “V”向量扩展* 规范中描述的掩码和尾部的 _不受干扰_ 和 _无关_ 策略。
+此外，代码不明确处理重叠和 SEW 约束；然而，这些在文本中明确说明。
+
+在许多情况下，伪代码包含
+对支持函数的调用，这些函数过于冗长，无法直接包含在规范中。
+此支持代码列在
+<<crypto_vector_appx_sail>> 中。
+
+
+建议阅读
+link:https://alasdair.github.io/manual.html[Sail 手册]
+以更好地理解代码片段。
+此外，
+link:https://github.com/billmcspadden-riscv/sail/blob/cookbook_br/cookbook/doc/TheSailCookbook_Complete.pdf[Sail 编程语言：Sail 食谱]
+是一个很好的参考。
+
+有关最新的 RISC-V Sail 模型，请参阅
+形式化模型 GitHub
+link:https://github.com/riscv/sail-riscv[仓库]。
+
+[[crypto_vector_policies]]
+==== 策略
+
+在创建此提案时，我们努力遵守以下策略：
+
+* 在以下选择之间：
+  1) 支持算法的多种实现策略
+  或
+  2) 支持单一的、性能更高/成本更低的实现风格；
+  向量密码扩展将选择更受约束但性能更高的选项。
+  这符合 RISC-V 规范其他部分的常见模式，
+  其中执行特定任务的推荐（但非必需）指令序列作为示例给出，
+  以便硬件和软件实现者可以仅针对单一用例进行优化。
+
+* 扩展将旨在很好地支持 _现有_ 标准化密码结构。
+  它不会尝试支持提议的标准，或仅存在于学术界的密码结构。
+  与 RISC-V 密码扩展标准化同时或之后确定的密码标准将通过
+  未来对 RISC-V 密码标准扩展的添加或版本进行处理。
+
+* 从历史上看，曾有一些讨论
+  cite:[LSYRR:04]
+  关于通用计算中新支持的操作如何
+  为密码算法启用新基础。
+  标准不会尝试预测新的有用低级操作，这些操作 _可能_ 有用作
+  未来密码结构的构建块。
+
+* 关于侧信道对策：
+  在相关情况下，提议的指令必须旨在消除任何时序侧信道的可能性。
+  所有指令都应以数据无关的时序实现。也就是说，这些指令的执行延迟不应随不同的输入值而变化。
+
+[[crypto-vector-element-groups]]
+==== 元素组
+
+许多向量密码指令操作的运算数比元素宽（目前限制为 64 位宽）。
+通常，这些运算数是 128 位和 256 位宽。在许多情况下，这些运算数由较小的运算数组成，这些运算数组合在一起（例如，每个 SHA-2 运算数由 4 个字组成）。然而，在其他情况下，这些运算数是单个值（例如，在 AES 轮指令中，每个运算数是 128 位块或轮密钥）。
+
+我们将这些运算数视为一个或多个 _元素组_ 的向量，如 <<vector-element-groups>> 中定义。
+
+每个操作元素组的向量密码指令都明确指定了它们的三个定义参数：EGW、EGS 和 EEW。
+
+[%autowidth]
+[%header,cols="4,4,4,4,4"]
+|===
+| 指令组
+| 扩展
+| EGW
+| EEW
+| EGS
+
+| AES      | <<zvkned>>            | 128 | 32 | 4
+| SHA256   | <<zvknh,zvknh[ab]>>  | 128 | 32 | 4
+| SHA512   | <<zvknh,zvknhb>>     | 256 | 64 | 4
+| GCM      | <<zvkg>>             | 128 | 32 | 4
+| SM4      | <<zvksed>>           | 128 | 32 | 4
+| SM3      | <<Zvksh>>            | 256 | 32 | 8
+|===
+
+[NOTE]
+====
+- 元素组宽度 (`EGW`) - 元素组中的总位数
+- 有效元素宽度 (`EEW`) - 每个元素中的位数
+- 元素组大小 (`EGS`) - 元素组中的元素数量
+====
+
+对于本规范中的所有向量密码指令，`EEW`=`SEW`。
+
+[NOTE]
+====
+每个密码指令所需的 `SEW` 是根据实现目标算法时其他指令通常所需的 `SEW` 来选择的。
+====
+
+- *向量元素组* 是一个或多个元素组的向量。
+- *标量元素组* 是单个元素组。
+
+在 `VLEN` < `EGW` 的实现中，元素组可以通过使用 `LMUL`>1 跨寄存器形成。
+
+[NOTE]
+====
+由于 *应用程序处理器的向量扩展* 要求 VLEN 最小为 128，因此大多数此类实现将需要 LMUL=2 来形成本规范中最大的元素组。
+
+然而，VLEN 较小的实现（例如嵌入式设计）将需要较大的 `LMUL` 来形成必要的元素组。
+重要的是要记住，这会减少可用寄存器组的数量，从而可能难以或不可能为预期的密码算法编写高效代码。
+
+例如，VLEN=32 的实现需要设置 LMUL=8 来为 `SM3` 创建一个 256 位元素组。这意味着将只有 4 个寄存器组，其中 3 个将被单个 `SM3` 消息扩展指令消耗。
+====
+
+与所有向量指令一样，处理的元素数量由向量长度 `vl` 指定。操作的元素组数量为 `vl`/`EGS`。
+同样，起始元素组为 `vstart`/`EGS`。
+有关向量密码指令的 `vl` 和 `vstart` 限制，请参阅 <<crypto-vector-instruction-constraints>>。
+
+// 如果此比率对于向量密码指令不是整数，则会引发非法指令异常。
+
+// 由于 `vstart` 以元素表示，因此起始元素组为 `vstart`/`EGS`。
+// 如果此比率对于向量密码指令不是整数，则会引发非法指令异常。
+
+[[crypto-vector-instruction-constraints]]
+==== 指令约束
+
+RVV 1.0 指定的所有标准向量指令约束都适用于向量密码指令。
+除了这些约束之外，还引入了一些额外的特定约束。
+
+以下是特定向量密码指令的各种约束的快速参考。
+
+
+vl 和 vstart 约束::
+由于 `vl` 和 `vstart` 指的是元素，因此使用元素组的向量密码指令
+(参见 <<crypto-vector-element-groups>>) 要求这些值是元素组大小 (`EGS`) 的整数倍。
+
+- 违反 `vl` 或 `vstart` 要求的指令是 _保留的_。
+
+[%autowidth]
+[%header,cols="4,4"]
+|===
+| 指令
+| EGS
+
+| vaes*   | 4
+| vsha2*  | 4
+| vg*     | 4
+| vsm3*   | 8
+| vsm4*   | 4
+
+|===
+
+LMUL 约束::
+对于元素组指令，`LMUL`*`VLEN` 必须始终至少与 `EGW` 一样大，否则会引发 _非法指令异常_，即使 `vl`=0。
+
+[%autowidth]
+[%header,cols="4,2,2"]
+|===
+| 指令
+| SEW
+| EGW
+
+| vaes*   | 32 | 128
+| vsha2*  | 32 | 128
+| vsha2*  | 64 | 256
+| vg*     | 32 | 128
+| vsm3*   | 32 | 256
+| vsm4*   | 32 | 128
+
+|===
+
+
+SEW 约束::
+某些向量密码指令仅针对特定 `SEW` 定义。在这种情况下，所有其他 `SEW` 值都是 _保留的_。
+
+[%autowidth]
+[%header,cols="4,4"]
+|===
+| 指令
+| 所需 SEW
+
+| vaes*          | 32
+| Zvknha: vsha2* | 32
+| Zvknhb: vsha2* | 32 或 64
+| vclmul[h]      | 64
+| vg*            | 32
+| vsm3*          | 32
+| vsm4*          | 32
+
+
+|===
+
+向量/标量约束::
+本规范定义了使用 *标量元素组* 的新向量/标量 (.vs) 指令。*标量元素组* 操作数的 `EMUL = ceil(EGW / VLEN)`。
+
+[NOTE]
+====
+对于任何 VLEN ≥ EGW 的实现，标量元素组操作数不需要与 LMUL 对齐。
+====
+
+在本规范中定义的 `.vs` 指令中，`vs2` 保存一个 128 位标量元素组。
+对于 VLEN ≥ 128 的实现，`vs2` 指的是单个寄存器。因此，`vd` 寄存器组不得与 `vs2` 寄存器重叠。
+然而，在 VLEN < 128 的实现中，`vs2` 指的是由保存 128 位标量元素组所需的寄存器数量组成的寄存器组。在这种情况下，`vd` 寄存器组不得与此 `vs2` 寄存器组重叠。
+
+[%autowidth]
+[%header,cols="4,4,4"]
+|===
+| 指令
+| 寄存器
+| 不能重叠
+
+| vaes*.vs      | vs2      | vd
+| vsm4r.vs      | vs2      | vd
+| vsha2c[hl]    | vs1, vs2 | vd
+| vsha2ms       | vs1, vs2 | vd
+| vsm3me        | vs2      | vd
+| vsm3c         | vs2      | vd
+
+
+|===
+
+[[crypto-vector-scalar-instructions]]
+==== 向量-标量指令
+
+RISC-V 向量扩展定义了三种向量-标量操作编码，它们从 GPR 或 FP 寄存器获取标量操作数：
+
+- OPIVX：标量 GPR _x_ 寄存器
+- OPFVF：标量 FP _f_ 寄存器
+- OPMVX：标量 GPR _x_ 寄存器
+
+然而，向量扩展包括向量归约操作，这些操作也可以被视为向量-标量操作，因为标量操作数是从向量寄存器 `vs1` 的元素 0 提供的。向量操作数在向量寄存器组 `vs2` 中提供。
+这些归约操作都在其助记符中使用 `.vs` 后缀。此外，归约操作都在目标寄存器 `vd` 的元素 0 中产生标量结果。
+
+向量密码扩展定义了向量-标量指令，这些指令与这些向量归约操作类似，因为它们从向量寄存器获取标量操作数。然而，它们的不同之处在于它们从 `vs2` 获取标量元素组（参见 <<crypto-vector-element-groups>>），并且它们将 _向量_ 结果返回到 `vd`，`vd` 也是源向量操作数。
+这些向量-标量密码指令也在其助记符中使用 `.vs` 后缀。
+
+[NOTE]
+====
+我们选择使用 `vs2` 作为标量操作数，`vd` 作为向量操作数，以便我们可以使用 `vs1` 说明符作为这些指令的额外编码位。这使得这些指令具有更小的编码占用空间，为将来其他指令留出更多空间。
+====
+
+这些指令使单个密钥（在 `vs2` 中指定为标量元素组）可以应用于寄存器组 `vd` 的每个元素组。
+
+[NOTE]
+====
+标量元素组在应用程序处理器中最多占用一个寄存器。然而，在 VLEN<128 的实现中，它们将占用 2 个（VLEN=64）或 4 个（VLEN=32）寄存器。
+====
+
+
+[NOTE]
+====
+多个 AES 加密轮（例如）通常与相同的轮密钥并行执行（例如在计数器模式下）。
+这些向量-标量密码指令允许将轮密钥指定为标量元素组，而无需先将公共密钥扩展到整个向量组。
+====
+
+// 在 AES256 全轮指令的情况下，我们需要提供两个 128 位密钥；一个保存在 `vs1` 中，
+// 另一个保存在 `vs2` 中。要处理的 128 位数据保存在 `vd` 中。
+// 此指令的向量-标量形式与现有向量-标量指令不同，因为
+// `vs1` 和 `vs2` 都被视为适用于 `vd` 向量操作数的标量操作数。
+
+// [NOTE]
+// ====
+// 以前，执行轮操作的 AES 和 SM4 指令（包括 AES 全轮指令）
+// 被定义为破坏性操作，其中数据源在 `vd` 中提供，密钥在
+// `vs2` 中提供。随着新的密码向量-标量指令的出现，我们正在更改这些指令
+// 以使用 `vs1` 作为密钥，`vs2` 作为数据。
+// 在向量-标量指令的情况下，标量密钥将保存在
+// `vs1` 的元素组 0 中。这样做是为了与 `vs1` 用于标量元素的用法保持一致，
+// 适用于所有现有向量-标量操作以及向量归约操作。
+// ====
+
+[[crypto-vector-software-portability]]
+==== 软件可移植性
+以下包含一些指导方针，可实现基于向量密码的代码
+到具有不同 `VLEN` 值的实现的移植性
+
+应用程序处理器::
+应用程序处理器预计将遵循 V 扩展，因此 VLEN ≥ 128。
+
+
+
+// [NOTE]
+// ====
+由于大多数 _密码学特定_ 指令的 `EGW`=128，因此这些指令无需特殊处理即可支持 VLEN=128 的实现。
+
+然而，SHA-512 和 SM3 指令的 `EGW`=256。VLEN=128 的实现要求这些指令的 `LMUL` 加倍，以便在寄存器对中创建 256 位元素。
+使用此 `LMUL` 加倍编写的代码不会影响 VLEN ≥ 256 的实现返回的结果，因为 `vl` 控制处理的元素组数量。因此，我们建议实现 SHA-512 和 SM3 的库采用此 `LMUL` 加倍，以确保软件可以在所有 VLEN ≥ 128 的实现上运行。
+
+虽然这些指令的 `LMUL` 加倍对于 VLEN ≥ 256 的实现是 _安全_ 的，但它可能不是最优的，因为它会导致不必要的寄存器压力，并可能在某些微架构中产生性能损失。因此，我们建议除了为 SHA-512 和 SM3 提供可移植代码外，库还应在 VLEN ≥ 256 时包含这些指令的更优代码。
+// ====
+
+[%autowidth]
+[%header,cols="4,4,4,4"]
+|===
+| 算法
+| 指令
+| VLEN
+| LMUL
+
+| SHA-512 |  vsha2* | 64 | vl/2
+| SM3     | vsm3*   | 32 | vl/4
+|===
+
+// [NOTE]
+// ====
+// 我们建议所有应用程序处理器的库代码都应编写为可在任何 VLEN ≥ 128 的实现上运行。还鼓励此类库具有针对 VLEN ≥ 256 的实现优化的 SHA-512 和 SM3 代码版本。
+// ====
+
+嵌入式处理器::
+
+嵌入式处理器通常具有 VLEN < 128 的实现。这将需要编写具有较大 `LMUL` 值的代码，以使元素组能够形成。
+
+`.vs` 指令需要 `EGW`=128 的标量元素组。在 VLEN < 128 的实现中，这些标量元素组必然会在寄存器之间形成。这与向量指令中通常占用单个寄存器一部分的大多数标量不同。
+
+
+// [NOTE]
+// ====
+我们建议为 VLEN=32 和 VLEN=64 提供不同的代码，因为为 VLEN=32 编写的代码对于 VLEN=64 的实现来说可能过于繁重。
+// ====
+
+[[crypto_vector_extensions]]
+=== 扩展概述
+
+本节介绍了向量密码学指令集扩展规范中的所有扩展。
+
+<<zvknh,Zvknhb>> 和 <<zvbc>> 向量密码扩展
+——以及相应的复合扩展 <<Zvkn>>、<<Zvknc>>、<<Zvkng>> 和 <<Zvksc>>——
+依赖于 Zve64x。
+
+所有其他向量密码扩展都依赖于 `Zve32x`。
+
+注意：如果支持 `Zve32x`，则 `Zvkb` 或 `Zvbb` 提供对 EEW 8、16 和 32 的支持。如果支持 `Zve64x`，则 `Zvkb` 或 `Zvbb` 也添加对 EEW 64 的支持。
+
+
+// 有关向量元素组的更多详细信息以及小 `VLEN` 值的缺点，请参阅 <<crypto-vector-element-groups>>。
+
+
+本向量密码规范中定义的所有 _密码学特定_ 指令（即 <<zvkned>>、<<zvknh,Zvknh[ab]>>、<<Zvkg>>、<<Zvksed>> 和 <<zvksh>> 中的指令，但 _不包括_ <<zvbb>>、<<zvkb>> 或 <<zvbc>>）应以数据无关的执行延迟执行，如 <<#crypto_scalar_instructions,RISC-V 标量密码学扩展规范>> 中定义。
+重要的是要注意，向量密码指令独立于 `Zkt` 扩展的实现，并且不要求实现 `Zkt`。
+
+本规范包含一个 <<Zvkt>> 扩展，当实现时，它要求某些向量指令（包括 <<zvbb>>、<<zvkb>> 和 <<zvbc>>）以数据无关的执行延迟执行。
+
+单个密码学扩展的检测使用
+统一的基于软件的 RISC-V 发现方法。
+
+[NOTE]
+====
+在撰写本文时，这些发现机制仍在开发中。
+====
+
+[[zvbb,Zvbb]]
+==== `Zvbb` - 向量基本位操作
+
+向量基本位操作指令。
+
+[NOTE]
+====
+此扩展是 <<Zvkb>> 扩展的超集。
+====
+
+[%autowidth]
+[%header,cols="2,4"]
+|===
+|助记符
+|指令
+
+| vandn.[vv,vx]      | <<insns-vandn>>
+| vbrev.v            | <<insns-vbrev>>
+| vbrev8.v           | <<insns-vbrev8>>
+| vrev8.v            | <<insns-vrev8>>
+| vclz.v             | <<insns-vclz>>
+| vctz.v             | <<insns-vctz>>
+| vcpop.v            | <<insns-vcpop>>
+| vrol.[vv,vx]       | <<insns-vrol>>
+| vror.[vv,vx,vi]    | <<insns-vror>>
+| vwsll.[vv,vx,vi]   | <<insns-vwsll>>
+
+|===
+
+<<<
+
+[[zvbc,Zvbc]]
+==== `Zvbc` - 向量无进位乘法
+
+通用无进位乘法指令，常用于密码学和哈希（例如，椭圆曲线密码学、GHASH、CRC）。
+
+这些指令仅针对 `SEW`=64 定义。
+
+[%autowidth]
+[%header,cols="^2,4"]
+|===
+|助记符
+|指令
+| vclmul.[vv,vx]     | <<insns-vclmul>>
+| vclmulh.[vv,vx]    | <<insns-vclmulh>>
+
+|===
+
+<<<
+
+[[zvkb,Zvkb]]
+==== `Zvkb` - 向量密码学位操作
+
+向量位操作指令，对于安全高效地实现常见密码工作负载至关重要。
+
+[NOTE]
+====
+此 Zvkb 扩展是 Zvbb 扩展的真子集。
+Zvkb 允许向量密码实现，而无需承担实现 Zvbb 扩展中额外位操作指令的成本：vbrev.v、vclz.v、vctz.v、vcpop.v 和 vwsll.[vv,vx,vi]。
+====
+
+[%autowidth]
+[%header,cols="2,4"]
+|===
+|助记符
+|指令
+
+| vandn.[vv,vx]      | <<insns-vandn>>
+// | vbrev.v            | <<insns-vbrev>>
+| vbrev8.v           | <<insns-vbrev8>>
+| vrev8.v            | <<insns-vrev8>>
+// | vclz.v             | <<insns-vclz>>
+// | vctz.v             | <<insns-vctz>>
+// | vcpop.v            | <<insns-vcpop>>
+| vrol.[vv,vx]       | <<insns-vrol>>
+| vror.[vv,vx,vi]    | <<insns-vror>>
+// | vwsll.[vv,vx,vi]   | <<insns-vwsll>>
+|===
+
+<<<
+
+[[zvkg,Zvkg]]
+==== `Zvkg` - 向量 GCM/GMAC
+
+用于高效实现 GHASH~H~ 的指令，GHASH~H~ 用于 Galois/Counter 模式 (GCM) 和 Galois 消息认证码 (GMAC)。
+
+所有这些指令都作用于由四个 32 位元素组成的 128 位元素组。
+
+GHASH~H~ 定义在
+// link:https://csrc.nist.gov/publications/detail/sp/800-38d/final[NIST 特别出版物 800-38D]
+ “操作分组密码模式的建议：Galois/Counter 模式 (GCM) 和 GMAC”
+ cite:[nist:gcm]
+(NIST 规范)。
+
+[NOTE]
+====
+GCM 与分组密码（例如 AES 和 SM4）结合使用，用于加密消息并提供认证。
+GMAC 用于在不加密的情况下提供消息认证。
+====
+
+为了避免侧信道时序攻击，这些指令应以数据无关的时序实现。
+
+要处理的元素组数量为 `vl`/`EGS`。
+`vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+[%autowidth]
+[%header,cols="^2,4,4,4"]
+|===
+
+|SEW
+|EGW
+|助记符
+|指令
+| 32 | 128 | vghsh.vv | <<insns-vghsh>>
+| 32 | 128 | vgmul.vv | <<insns-vgmul>>
+
+|===
+
+<<<
+
+[[zvkned,Zvkned]]
+==== `Zvkned` - NIST 套件：向量 AES 分组密码
+
+用于加速 AES 分组密码的加密、解密和密钥调度功能的指令，
+如联邦信息处理标准出版物 197 中定义
+cite:[nist:fips:197]
+
+所有这些指令都作用于由四个 32 位元素组成的 128 位元素组。
+
+为了获得最佳性能，建议在 VLEN ≥ 128 的系统上实现这些指令。
+在 VLEN < 128 的系统上，元素组可以通过使用 LMUL = 2 和 LMUL = 4 分别连接来自两个或四个寄存器的 32 位元素来形成。
+
+// VLEN<128 的实现应考虑现有的
+// 标量密码学扩展，特别是 <<Zkne,Zkne>> 和 <<Zknd,Zknd>>
+// 用于加速密码操作。
+
+为了避免侧信道时序攻击，这些指令应以数据无关的时序实现。
+
+要处理的元素组数量为 `vl`/`EGS`。
+`vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+[%autowidth]
+[%header,cols="^2,4,4,4"]
+|===
+|SEW
+|EGW
+|助记符
+|指令
+
+| 32| 128 | vaesef.[vv,vs]  | <<insns-vaesef>>
+| 32| 128 | vaesem.[vv,vs]  | <<insns-vaesem>>
+| 32| 128 | vaesdf.[vv,vs]  | <<insns-vaesdf>>
+| 32| 128 | vaesdm.[vv,vs]  | <<insns-vaesdm>>
+| 32| 128 | vaeskf1.vi      | <<insns-vaeskf1>>
+| 32| 128 | vaeskf2.vi      | <<insns-vaeskf2>>
+| 32| 128 | vaesz.vs        | <<insns-vaesz>>
+|===
+
+<<<
+
+[[zvknh, zvknh[ab]]]
+==== `Zvknh[ab]` - NIST 套件：向量 SHA-2 安全哈希
+
+用于加速 SHA-2 的指令，如 FIPS PUB 180-4 安全哈希标准 (SHS) 中定义
+cite:[nist:fips:180:4]
+
+`SEW` 区分 SHA-256 (`SEW`=32) 和 SHA-512 (`SEW`=64)。
+
+- SHA-256：这些指令作用于由四个 32 位元素组成的 128 位元素组。
+- SHA-512：这些指令作用于由四个 64 位元素组成的 256 位元素组。
+
+[%autowidth]
+[%header,cols="^2,^2,^2,2"]
+|===
+|SEW
+|EGW
+|SHA-2
+|扩展
+
+|32 | 128 | SHA-256 | Zvknha, Zvknhb
+|64 | 256 | SHA-512 | Zvknhb
+|===
+
+// link:https://doi.org/10.6028/NIST.FIPS.180-4[FIPS PUB 180-4 安全哈希标准 (SHS)])
+
+- Zvknhb 支持 SHA-256 和 SHA-512。
+- Zvknha 仅支持 SHA-256。
+
+// [NOTE]
+// ====
+// Zvknhb 已实现，`SEW` 用于区分 SHA-256 (SEW=32) 和 SHA-512 (SEW=64)。
+// 如果 Zvknha 已实现，则仅支持 SHA-256，并且 SEW 必须为 32。
+// ====
+
+VLEN < 128 的 SHA-256 实现需要 LMUL>1 来组合寄存器组中的 32 位元素，以提供元素组的所有四个元素。
+
+VLEN < 256 的 SHA-512 实现需要 LMUL>1 来组合寄存器组中的 64 位元素，以提供元素组的所有四个元素。
+
+// SHA-2 定义在
+// link:https://doi.org/10.6028/NIST.FIPS.180-4[FIPS PUB 180-4 安全哈希标准 (SHS)] 中。
+
+为了避免侧信道时序攻击，这些指令应以数据无关的时序实现。
+
+// [NOTE]
+// ====
+// 建议实现这些指令的 VLEN≥128。
+// // 此外，为了 SHA512 的最佳性能，建议实现 VLEN≥256。
+// 当 VLEN<EGW 时，软件需要使用适当的 LMUL，以便可以组合指定寄存器组中的元素以形成完整的元素组。
+// ====
+
+要处理的元素组数量为 `vl`/`EGS`。
+`vl` 必须设置为要处理的 `SEW` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+[%autowidth]
+[%header,cols="2,4"]
+|===
+// |`VLENmin`
+|助记符
+|指令
+
+// | 128
+| vsha2ms.vv   | <<insns-vsha2ms>>
+// | 128
+| vsha2c[hl].vv    | <<insns-vsha2c>>
+|===
+
+<<<
+
+[[zvksed,Zvksed]]
+==== `Zvksed` - ShangMi 套件：SM4 分组密码
+
+用于加速 SM4 分组密码的加密、解密和密钥调度功能的指令。
+
+SM4 分组密码在 _32907-2016: {SM4} 分组密码算法_ 中指定
+cite:[gbt:sm4]
+
+还有其他各种来源描述了 SM4 分组密码。
+虽然不是标准的最终版本，
+link:https://www.rfc-editor.org/rfc/rfc8998.html[RFC 8998 ShangMi (SM) TLS 1.3 密码套件]
+很有用且易于访问。
+
+// https://datatracker.ietf.org/doc/id/draft-crypto-sm4-00
+
+所有这些指令都作用于由四个 32 位元素组成的 128 位元素组。
+
+// 实现 VLEN<128 的系统应考虑现有的
+// 标量密码学扩展，特别是 <<Zkne,Zkne>> 和 <<Zknd,Zknd>>
+// 用于加速密码操作。
+
+为了避免侧信道时序攻击，这些指令应以数据无关的时序实现。
+
+要处理的元素组数量为 `vl`/`EGS`。
+`vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+[%autowidth]
+[%header,cols="^2,4,4,4"]
+|===
+|SEW
+|EGW
+|助记符
+|指令
+
+| 32 | 128 | vsm4k.vi        | <<insns-vsm4k>>
+| 32 | 128 | vsm4r.[vv,vs]   | <<insns-vsm4r>>
+|===
+
+<<<
+
+[[zvksh,Zvksh]]
+==== `Zvksh` - ShangMi 套件：SM3 安全哈希
+
+用于加速 SM3 哈希函数功能的指令。
+
+SM3 安全哈希算法在 _32905-2016: SM3 密码哈希算法_ 中指定
+cite:[gbt:sm4]
+
+还有其他各种来源描述了 SM3 安全哈希。
+虽然不是标准的最终版本，
+link:https://www.rfc-editor.org/rfc/rfc8998.html[RFC 8998 ShangMi (SM) TLS 1.3 密码套件]
+很有用且易于访问。
+
+// https://datatracker.ietf.org/doc/id/draft-crypto-sm4-00
+
+所有这些指令都作用于由八个 32 位元素组成的 256 位元素组。
+
+VLEN < 256 的实现需要 LMUL>1 来组合寄存器组中的 32 位元素，以提供元素组的所有八个元素。
+
+// 这些指令在 VLEN ≥ 256 的实现上效率最高。
+// 它们在 VLEN=128 的实现上也将提供实质性好处，但需要 LMUL>1 才能组合寄存器组中的元素以形成完整的元素组。
+// VLEN<128 的实现可能效率不高，应考虑现有的
+// 标量密码学扩展，特别是 `Zkne` 和 `Zknd`，
+// 用于加速密码操作。
+
+为了避免侧信道时序攻击，这些指令应以数据无关的时序实现。
+
+要处理的元素组数量为 `vl`/`EGS`。
+`vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=8` 的倍数。 +
+同样，`vstart` 必须是 `EGS=8` 的倍数。
+
+[%autowidth]
+[%header,cols="2,4,4,4"]
+|===
+| SEW
+| EGW
+| 助记符
+| 指令
+
+| 32 | 256 | vsm3me.vv | <<insns-vsm3me>>
+| 32 | 256 | vsm3c.vi   | <<insns-vsm3c>>
+|===
+
+<<<
+
+[[zvkn,Zvkn]]
+==== `Zvkn` - NIST 算法套件
+
+此扩展是以下其他扩展集的简写：
+
+[%autowidth]
+[%header,cols="^2,4"]
+|===
+|包含的扩展
+|描述
+
+
+| Zvkned  | <<Zvkned>>
+| Zvknhb  | <<zvknh,Zvknhb>>
+// | Zvbb    | <<Zvbb>>
+| Zvkb    | <<Zvkb>>
+// | Zvbc    | <<Zvbc>>
+| Zvkt    | <<Zvkt>>
+|===
+
+[NOTE]
+====
+虽然 Zvkg 和 Zvbc 不属于此扩展，但建议至少实现其中一个，以实现高效的 AES-GCM。
+====
+
+<<<
+
+[[zvknc,Zvknc]]
+==== `Zvknc` - NIST 算法套件与无进位乘法
+
+此扩展是以下其他扩展集的简写：
+
+[%autowidth]
+[%header,cols="^2,4"]
+|===
+|包含的扩展
+|描述
+
+
+| Zvkn  | <<Zvkn>>
+| Zvbc  | <<Zvbc>>
+|===
+
+[NOTE]
+====
+此扩展将 NIST 算法套件与向量无进位乘法扩展结合，以实现 AES-GCM。
+====
+
+<<<
+
+[[zvkng,Zvkng]]
+==== `Zvkng` - NIST 算法套件与 GCM
+
+此扩展是以下其他扩展集的简写：
+
+[%autowidth]
+[%header,cols="^2,4"]
+|===
+|包含的扩展
+|描述
+
+
+| Zvkn  | <<Zvkn>>
+| Zvkg  | <<Zvkg>>
+|===
+
+[NOTE]
+====
+此扩展将 NIST 算法套件与 GCM/GMAC 扩展结合，以实现高性能 AES-GCM。
+====
+
+<<<
+
+[[zvks,Zvks]]
+==== `Zvks` - ShangMi 算法套件
+
+此扩展是以下其他扩展集的简写：
+
+[%autowidth]
+[%header,cols="^2,4"]
+|===
+|包含的扩展
+|描述
+
+
+| Zvksed  | <<Zvksed>>
+| Zvksh   | <<Zvksh>>
+// | Zvbb    | <<Zvbb>>
+| Zvkb    | <<Zvkb>>
+// | Zvbc    | <<Zvbc>>
+| Zvkt    | <<Zvkt>>
+|===
+
+[NOTE]
+====
+虽然 Zvkg 和 Zvbc 不属于此扩展，但建议至少实现其中一个，以实现高效的 SM4-GCM。
+====
+
+<<<
+
+[[zvksc,Zvksc]]
+==== `Zvksc` - ShangMi 算法套件与无进位乘法
+
+此扩展是以下其他扩展集的简写：
+
+[%autowidth]
+[%header,cols="^2,4"]
+|===
+|包含的扩展
+|描述
+
+
+| Zvks  | <<Zvks>>
+| Zvbc  | <<Zvbc>>
+|===
+
+[NOTE]
+====
+此扩展将 ShangMi 算法套件与向量无进位乘法扩展结合，以实现 SM4-GCM。
+====
+
+<<<
+
+[[zvksg,Zvksg]]
+==== `Zvksg` - ShangMi 算法套件与 GCM
+
+此扩展是以下其他扩展集的简写：
+
+[%autowidth]
+[%header,cols="^2,4"]
+|===
+|包含的扩展
+|描述
+
+
+| Zvks  | <<Zvks>>
+| Zvkg  | <<Zvkg>>
+|===
+
+[NOTE]
+====
+此扩展将 ShangMi 算法套件与 GCM/GMAC 扩展结合，以实现高性能 SM4-GCM。
+====
+
+<<<
+
+[[zvkt,Zvkt]]
+==== `Zvkt` - 向量数据无关执行延迟
+
+Zvkt 扩展要求以下列表中的所有已实现指令都以数据无关的执行延迟执行，如 <<#crypto_scalar_instructions,RISC-V 标量密码学扩展规范>> 中定义。
+
+数据无关执行延迟 (DIEL) 适用于指令的所有 _数据操作数_，即使那些不属于主体或不活动的也适用。然而，DIEL 不适用于其他值，例如 vl、vtype 和掩码（当用于控制掩码向量指令的执行时）。
+此外，DIEL 不适用于指令编码中指定的常量值，例如零寄存器 (`x0`) 的使用，以及在指令的立即数形式中，立即数字段中的值（即 imm 和 uimm）。
+
+在某些情况下——如下面列表中明确指定的——用作控制而不是数据的操作数免于 DIEL。
+
+[NOTE]
+====
+DIEL 有助于防止侧信道时序攻击，这些攻击用于确定旨在保密的数值。此类值包括密码密钥、明文和部分加密文本。DIEL 无意于保守软件（以及其中包含的密码算法）的秘密，因为假定攻击者已经知道这些。这就是 DIEL 不适用于嵌入在指令编码中的常量的原因。
+
+重要的是，不在主体中或被屏蔽的元素的值不影响指令的执行延迟。有时此类元素包含也需要保密的数据。
+====
+
+===== 所有 <<Zvbb>> 指令
+- vandn.v[vx]
+- vclz.v
+- vcpop.v
+- vctz.v
+- vbrev.v
+- vbrev8.v
+- vrev8.v
+- vrol.v[vx]
+- vror.v[vxi]
+- vwsll.[vv,vx,vi]
+
+[NOTE]
+====
+所有 <<Zvkb>> 指令也受 DIEL 覆盖，因为它们是 <<Zvbb>> 的真子集。
+====
+
+===== 所有 <<Zvbc>> 指令
+- vclmul[h].v[vx]
+
+===== 加/减
+- v[r]sub.v[vx]
+- vadd.v[ivx]
+- vsub.v[vx]
+- vwadd[u].[vw][vx]
+- vwsub[u].[vw][vx]
+
+===== 带进位的加/减
+- vadc.v[ivx]m
+- vmadc.v[ivx][m]
+- vmsbc.v[vx]m
+- vsbc.v[vx]m
+
+===== 比较和设置
+- vmseq.v[vxi]
+- vmsgt[u].v[xi]
+- vmsle[u].v[xi]
+- vmslt[u].v[xi]
+- vmsne.v[ivx]
+
+===== 复制
+- vmv.s.x
+- vmv.v.[ivxs]
+- vmv[1248]r.v
+
+===== 扩展
+- vsext.vf[248]
+- vzext.vf[248]
+
+===== 逻辑
+- vand.v[ivx]
+- vm[n]or.mm
+- vmand[n].mm
+- vmnand.mm
+- vmorn.mm
+- vmx[n]or.mm
+- vor.v[ivx]
+- vxor.v[ivx]
+
+===== 乘法
+- vmul[h].v[vx]
+- vmulh[s]u.v[vx]
+- vwmul.v[vx]
+- vwmul[s]u.v[vx]
+
+===== 乘加
+- vmacc.v[vx]
+- vmadd.v[vx]
+- vnmsac.v[vx]
+- vnmsub.v[vx]
+- vwmacc.v[vx]
+- vwmacc[s]u.v[vx]
+- vwmaccus.vx
+
+===== 整数合并
+- vmerge.v[ivx]m
+
+===== 置换
+在 `vrgather[ei16]` 指令的 `.vv` 和 `.xv` 形式中，
+`vs1` 和 `rs1` 中的值用于控制，因此免于 DIEL。
+
+- vrgather.v[ivx]
+- vrgatherei16.vv
+
+===== 移位
+// `vs1`、`rs1`、`imm` 中的值用于控制（即移位量），因此免于 DIEL。
+
+- vnsr[al].w[ivx]
+- vsll.v[ivx]
+- vsr[al].v[ivx]
+
+===== 滑动
+- vslide1[up|down].vx
+- vfslide1[up|down].vf
+
+在 vslide[up|down].vx 指令中，`rs1` 中的值
+用于控制（即滑动量），因此免于 DIEL。
+
+- vslide[up|down].v[ix]
+
+[NOTE]
+====
+以下指令不受 Zvkt 影响：
+
+- *所有存储操作*
+- *所有浮点操作*
+- 加/减饱和
+* vsadd[u].v[ivx]
+* vssub[u].v[vx]
+- 裁剪
+* vnclip[u].w[ivx]
+- 压缩
+* vcompress.vm
+- 除法
+* vdiv[u].v[vx]
+* vrem[u].v[vx]
+- 平均
+* vaadd[u].v[vx]
+* vasub[u].v[vx]
+- 掩码操作
+* vcpop.m
+* vfirst.m
+* vid.v
+* viota.m
+* vms[bio]f.m
+- 最小/最大
+* vmax[u].v[vx]
+* vmin[u].v[vx]
+- 乘法饱和
+* vsmul.v[vx]
+- 归约
+* vredsum.vs
+* vwredsum[u].vs
+* vred[and|or|xor].vs
+* vred[min|max][u].vs
+- 移位舍入
+* vssra.v[ivx]
+* vssrl.v[ivx]
+- vset
+* vsetivli
+* vsetvl[i]
+====
+
+[[crypto_vector_insns, reftext="向量密码学指令"]]
+=== 指令
+
+[[insns-vaesdf, 向量 AES 解密最终轮]]
+==== vaesdf.[vv,vs]
+
+概要::
+向量 AES 最终轮解密
+
+助记符::
+vaesdf.vv vd, vs2 +
+vaesdf.vs vd, vs2
+
+编码 (向量-向量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00001'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101000'},
+]}
+....
+
+编码 (向量-标量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00001'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101001`'},
+]}
+....
+保留编码::
+* `SEW` 是除 32 以外的任何值
+* 仅适用于 `.vs` 形式：`vd` 寄存器组与 `vs2` 标量元素组重叠
+
+参数::
+
+[%autowidth]
+[%header,cols="4,2,2,2,2,2"]
+|===
+|寄存器
+|方向
+|EGW
+|EGS
+|EEW
+|定义
+
+| Vd  | 输入  | 128  | 4 | 32 | 轮状态
+| Vs2 | 输入  | 128  | 4 | 32 | 轮密钥
+| Vd  | 输出 | 128  | 4 | 32 | 新轮状态
+|===
+
+描述::
+执行最终轮 AES 分组密码解密。
+
+InvShiftRows 和 InvSubBytes 步骤应用于 `vd` 中的每个轮状态元素组。
+然后将其与 `vs2` 中相应元素组（向量-向量形式）或 `vs2` 中标量元素组（向量-标量形式）中的轮密钥进行异或。
+
+此指令必须始终实现，使其执行延迟不依赖于操作的数据。
+
+//  if( ((vl%EGS)<>0) | ((vstart%EGS)<>0) | (LMUL*VLEN < EGW))  then {
+
+操作::
+[source,sail]
+--
+function clause execute (VAESDF(vs2, vd, suffix)) = {
+  if(LMUL*VLEN < EGW)  then {
+    handle_illegal();  // 非法指令异常
+    RETIRE_FAIL
+  } else {
+
+  eg_len = (vl/EGS)
+  eg_start = (vstart/EGS)
+
+  foreach (i from eg_start to eg_len-1) {
+    let keyelem = if suffix == "vv" then i else 0;
+    let state : bits(128) = get_velem(vd,  EGW=128, i);
+    let rkey  : bits(128) = get_velem(vs2, EGW=128, keyelem);
+    let sr    : bits(128) = aes_shift_rows_inv(state);
+    let sb    : bits(128) = aes_subbytes_inv(sr);
+    let ark   : bits(128) = sb ^ rkey;
+    set_velem(vd, EGW=128, i, ark);
+  }
+  RETIRE_SUCCESS
+  }
+}
+--
+
+包含于::
+<<zvkn>>, <<zvknc>>, <<zvkned>>, <<zvkng>>
+
+<<<
+
+[[insns-vaesdm, 向量 AES 解密中间轮]]
+==== vaesdm.[vv,vs]
+
+概要::
+向量 AES 中间轮解密
+
+助记符::
+vaesdm.vv vd, vs2 +
+vaesdm.vs vd, vs2
+
+编码 (向量-向量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00000'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101000'},
+]}
+....
+
+编码 (向量-标量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00000'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101001'},
+]}
+....
+保留编码::
+* `SEW` 是除 32 以外的任何值
+* 仅适用于 `.vs` 形式：`vd` 寄存器组与 `vs2` 标量元素组重叠
+
+参数::
+
+[%autowidth]
+[%header,cols="4,2,2,2,2,2"]
+|===
+|寄存器
+|方向
+|EGW
+|EGS
+|EEW
+|定义
+
+| Vd  | 输入  | 128  | 4 | 32 | 轮状态
+| Vs2 | 输入  | 128  | 4 | 32 | 轮密钥
+| Vd  | 输出 | 128  | 4 | 32 | 新轮状态
+|===
+
+描述::
+执行中间轮 AES 分组密码解密。
+
+InvShiftRows 和 InvSubBytes 步骤应用于 `vd` 中的每个轮状态元素组。
+然后将其与 `vs2` 中相应元素组（向量-向量形式）或 `vs2` 中标量元素组（向量-标量形式）中的轮密钥进行异或。然后将结果应用于 InvMixColumns 步骤。
+
+此指令必须始终实现，使其执行延迟不依赖于操作的数据。
+//
+// 要处理的元素组数量为 `vl`/`EGS`。
+// `vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+// 同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+操作::
+[source,sail]
+--
+function clause execute (VAESDM(vs2, vd, suffix)) = {
+  if(LMUL*VLEN < EGW)  then {
+    handle_illegal();  // 非法指令异常
+    RETIRE_FAIL
+  } else {
+
+  eg_len = (vl/EGS)
+  eg_start = (vstart/EGS)
+
+  foreach (i from eg_start to eg_len-1) {
+    let keyelem = if suffix == "vv" then i else 0;
+    let state : bits(128) = get_velem(vd, EGW=128, i);
+    let rkey  : bits(128) = get_velem(vs2, EGW=128, keyelem);
+    let sr    : bits(128) = aes_shift_rows_inv(state);
+    let sb    : bits(128) = aes_subbytes_inv(sr);
+    let ark   : bits(128) = sb ^ rkey;
+    let mix   : bits(128) = aes_mixcolumns_inv(ark);
+    set_velem(vd, EGW=128, i, mix);
+  }
+  RETIRE_SUCCESS
+  }
+}
+--
+
+包含于::
+<<zvkn>>, <<zvknc>>, <<zvkned>>, <<zvkng>>
+
+<<<
+
+[[insns-vaesef, 向量 AES 加密最终轮]]
+==== vaesef.[vv,vs]
+
+概要::
+向量 AES 最终轮加密
+
+助记符::
+vaesef.vv vd, vs2 +
+vaesef.vs vd, vs2
+
+编码 (向量-向量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00011'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101000'},
+]}
+....
+
+编码 (向量-标量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00011'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101001'},
+]}
+....
+保留编码::
+* `SEW` 是除 32 以外的任何值
+* 仅适用于 `.vs` 形式：`vd` 寄存器组与 `vs2` 标量元素组重叠
+
+参数::
+
+[%autowidth]
+[%header,cols="4,2,2,2,2,2"]
+|===
+|寄存器
+|方向
+|EGW
+|EGS
+|EEW
+|定义
+
+| vd  | 输入  | 128  | 4 | 32 | 轮状态
+| vs2 | 输入  | 128  | 4 | 32 | 轮密钥
+| vd  | 输出 | 128  | 4 | 32 | 新轮状态
+|===
+
+描述::
+执行 AES 分组密码的最终轮加密功能。
+
+SubBytes 和 ShiftRows 步骤应用于 `vd` 中的每个轮状态元素组。
+然后将其与 `vs2` 中相应元素组（向量-向量形式）或 `vs2` 中标量元素组（向量-标量形式）中的轮密钥进行异或。
+
+此指令必须始终实现，使其执行延迟不依赖于操作的数据。
+//
+// 要处理的元素组数量为 `vl`/`EGS`。
+// `vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+// 同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+
+操作::
+[source,sail]
+--
+function clause execute (VAESEF(vs2, vd, suffix) = {
+  if(LMUL*VLEN < EGW)  then {
+    handle_illegal();  // 非法指令异常
+    RETIRE_FAIL
+  } else {
+
+  eg_len = (vl/EGS)
+  eg_start = (vstart/EGS)
+
+  foreach (i from eg_start to eg_len-1) {
+    let keyelem = if suffix == "vv" then i else 0;
+    let state : bits(128) = get_velem(vd, EGW=128, i);
+    let rkey  : bits(128) = get_velem(vs2, EGW=128, keyelem);
+    let sb    : bits(128) = aes_subbytes_fwd(state);
+    let sr    : bits(128) = aes_shift_rows_fwd(sb);
+    let ark   : bits(128) = sr ^ rkey;
+    set_velem(vd, EGW=128, i, ark);
+  }
+  RETIRE_SUCCESS
+  }
+}
+--
+
+包含于::
+<<zvkn>>, <<zvknc>>, <<zvkned>>, <<zvkng>>
+
+<<<
+
+[[insns-vaesem, 向量 AES 加密中间轮]]
+==== vaesem.[vv,vs]
+
+概要::
+向量 AES 中间轮加密
+
+助记符::
+vaesem.vv vd, vs2 +
+vaesem.vs vd, vs2
+
+编码 (向量-向量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00010'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101000'},
+]}
+....
+
+编码 (向量-标量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00010'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101001'},
+]}
+....
+保留编码::
+* `SEW` 是除 32 以外的任何值
+* 仅适用于 `.vs` 形式：`vd` 寄存器组与 `vs2` 标量元素组重叠
+
+
+参数::
+
+[%autowidth]
+[%header,cols="4,2,2,2,2,2"]
+|===
+|寄存器
+|方向
+|EGW
+|EGS
+|EEW
+|定义
+
+| Vd  | 输入  | 128  | 4 | 32 | 轮状态
+| Vs2 | 输入  | 128  | 4 | 32 | 轮密钥
+| Vd  | 输出 | 128  | 4 | 32 | 新轮状态
+|===
+
+描述::
+执行中间轮 AES 分组密码加密功能。
+
+SubBytes、ShiftRows 和 MixColumns 步骤应用于 `vd` 中的每个轮状态元素组。
+然后将其与 `vs2` 中相应元素组（向量-向量形式）或 `vs2` 中标量元素组（向量-标量形式）中的轮密钥进行异或。
+
+此指令必须始终实现，使其执行延迟不依赖于操作的数据。
+//
+// 要处理的元素组数量为 `vl`/`EGS`。
+// `vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+// 同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+操作::
+[source,sail]
+--
+function clause execute (VAESEM(vs2, vd, suffix)) = {
+  if(LMUL*VLEN < EGW)  then {
+    handle_illegal();  // 非法指令异常
+    RETIRE_FAIL
+  } else {
+
+  eg_len = (vl/EGS)
+  eg_start = (vstart/EGS)
+
+  foreach (i from eg_start to eg_len-1) {
+    let keyelem = if suffix == "vv" then i else 0;
+    let state : bits(128) = get_velem(vd, EGW=128, i);
+    let rkey  : bits(128) = get_velem(vs2, EGW=128, keyelem);
+    let sb    : bits(128) = aes_subbytes_fwd(state);
+    let sr    : bits(128) = aes_shift_rows_fwd(sb);
+    let mix   : bits(128) = aes_mixcolumns_fwd(sr);
+    let ark   : bits(128) = mix ^ rkey;
+    set_velem(vd, EGW=128, i, ark);
+  }
+  RETIRE_SUCCESS
+  }
+}
+--
+
+包含于::
+<<zvkn>>, <<zvknc>>, <<zvkned>>, <<zvkng>>
+
+<<<
+
+[[insns-vaeskf1, 向量 AES-128 正向密钥调度]]
+==== vaeskf1.vi
+
+概要::
+向量 AES-128 正向密钥调度生成
+
+助记符::
+vaeskf1.vi vd, vs2, uimm
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: 'uimm'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '100010'},
+]}
+....
+保留编码::
+* `SEW` 是除 32 以外的任何值
+
+参数::
+
+[%autowidth]
+[%header,cols="4,2,2,2,2,2"]
+|===
+|寄存器
+|方向
+|EGW
+|EGS
+|EEW
+|定义
+
+| uimm | 输入  | -    | - | -  | 轮号 (rnd)
+| Vs2  | 输入  | 128  | 4 | 32 | 当前轮密钥
+| Vd   | 输出 | 128  | 4 | 32 | 下一轮密钥
+|===
+
+描述::
+执行一轮正向 AES-128 密钥调度。
+
+// 在每个元素组内，
+下一轮密钥逐字从 `vs2` 中的当前轮密钥元素组和轮密钥的紧邻前一个字生成。最低有效字使用当前轮密钥的最高有效字以及由轮号选择的轮常数生成。
+
+轮号范围从 1 到 10，来自 `uimm[3:0]`；`uimm[4]` 被忽略。
+超出范围的 `uimm[3:0]` 值 0 和 11-15 通过反转 `uimm[3]` 映射到范围内值。因此，0 映射到 8，11-15 映射到 3-7。
+轮号用于指定轮常数，该轮常数用于生成第一个轮密钥字。
+
+此指令必须始终实现，使其执行延迟不依赖于操作的数据。
+
+[NOTE]
+====
+我们选择将超出范围的轮号映射到范围内值，因为这允许指令的行为对于 `uimm[4:0]` 的所有值都完全定义，且只需最少的额外逻辑。
+====
+
+//
+
+// 要处理的元素组数量为 `vl`/`EGS`。
+// `vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+// 同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+
+操作::
+[source,sail]
+--
+function clause execute (VAESKF1(rnd, vd, vs2)) = {
+  if(LMUL*VLEN < EGW)  then {
+    handle_illegal();  // 非法指令异常
+    RETIRE_FAIL
+  } else {
+
+ // 将超出范围的立即数投影到范围内值
+ if( (unsigned(rnd[3:0]) > 10) | (rnd[3:0] = 0)) then rnd[3] = ~rnd[3]
+
+  eg_len = (vl/EGS)
+  eg_start = (vstart/EGS)
+
+  let r : bits(4) = rnd-1;
+
+  foreach (i from eg_start to eg_len-1) {
+      let CurrentRoundKey[3:0]  : bits(128)  = get_velem(vs2, EGW=128, i);
+      let w[0] : bits(32) = aes_subword_fwd(aes_rotword(CurrentRoundKey[3])) XOR
+        aes_decode_rcon(r) XOR CurrentRoundKey[0]
+      let w[1] : bits(32) = w[0] XOR CurrentRoundKey[1]
+      let w[2] : bits(32) = w[1] XOR CurrentRoundKey[2]
+      let w[3] : bits(32) = w[2] XOR CurrentRoundKey[3]
+      set_velem(vd, EGW=128, i, w[3:0]);
+    }
+    RETIRE_SUCCESS
+  }
+}
+
+--
+
+包含于::
+<<zvkn>>, <<zvknc>>, <<zvkned>>, <<zvkng>>
+
+<<<
+
+[[insns-vaeskf2, 向量 AES-256 正向密钥调度]]
+==== vaeskf2.vi
+
+概要::
+向量 AES-256 正向密钥调度生成
+
+助记符::
+vaeskf2.vi vd, vs2, uimm
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: 'uimm'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101010'},
+]}
+....
+保留编码::
+* `SEW` 是除 32 以外的任何值
+
+参数::
+
+[%autowidth]
+[%header,cols="4,2,2,2,2,2"]
+|===
+|寄存器
+|方向
+|EGW
+|EGS
+|EEW
+|定义
+
+| Vd   | 输入  | 128  | 4 | 32 | 上一轮密钥
+| uimm | 输入  | -    | - | -  | 轮号 (rnd)
+| Vs2  | 输入  | 128  | 4 | 32 | 当前轮密钥
+| Vd   | 输出 | 128  | 4 | 32 | 下一轮密钥
+|===
+
+描述::
+执行一轮正向 AES-256 密钥调度。
+
+// 在每个元素组内，
+下一轮密钥逐字从 `vd` 中的上一轮密钥元素组和轮密钥的紧邻前一个字生成。下一轮密钥的最低有效字通过对当前轮密钥的最高有效字应用函数，然后将结果与轮常数进行异或来生成。
+轮号用于选择轮常数和函数。
+
+轮号范围从 2 到 14，来自 `uimm[3:0]`；`uimm[4]` 被忽略。
+超出范围的 `uimm[3:0]` 值 0-1 和 15 通过反转 `uimm[3]` 映射到范围内值。因此，0-1 映射到 8-9，15 映射到 7。
+
+此指令必须始终实现，使其执行延迟不依赖于操作的数据。
+
+[NOTE]
+====
+我们选择将超出范围的轮号映射到范围内值，因为这允许指令的行为对于 `uimm[4:0]` 的所有值都完全定义，且只需最少的额外逻辑。
+====
+
+//
+
+// 要处理的元素组数量为 `vl`/`EGS`。
+// `vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+// 同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+操作::
+[source,sail]
+--
+function clause execute (VAESKF2(rnd, vd, vs2)) = {
+  if(LMUL*VLEN < EGW)  then {
+    handle_illegal();  // 非法指令异常
+    RETIRE_FAIL
+  } else {
+
+ // 将超出范围的立即数投影到范围内值
+ if((unsigned(rnd[3:0]) < 2) |  (unsigned(rnd[3:0]) > 14)) then rnd[3] = ~rnd[3]
+
+  eg_len = (vl/EGS)
+  eg_start = (vstart/EGS)
+
+  foreach (i from eg_start to eg_len-1) {
+      let CurrentRoundKey[3:0]  : bits(128)  = get_velem(vs2, EGW=128, i);
+      let RoundKeyB[3:0] : bits(32)  = get_velem(vd, EGW=128, i); // 上一轮密钥
+
+      let w[0] : bits(32) = if (rnd[0]==1) then
+        aes_subword_fwd(CurrentRoundKey[3]) XOR RoundKeyB[0];
+      else
+        aes_subword_fwd(aes_rotword(CurrentRoundKey[3])) XOR aes_decode_rcon((rnd>>1) - 1) XOR RoundKeyB[0];
+      w[1] : bits(32) = w[0] XOR RoundKeyB[1]
+      w[2] : bits(32) = w[1] XOR RoundKeyB[2]
+      w[3] : bits(32) = w[2] XOR RoundKeyB[3]
+      set_velem(vd, EGW=128, i, w[3:0]);
+    }
+    RETIRE_SUCCESS
+  }
+}
+--
+
+包含于::
+<<zvkn>>, <<zvknc>>, <<zvkned>>, <<zvkng>>
+
+<<<
+
+[[insns-vaesz, 向量 AES 轮零]]
+==== vaesz.vs
+
+概要::
+向量 AES 轮零加密/解密
+
+助记符::
+vaesz.vs vd, vs2
+
+编码 (向量-标量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-VE'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPMVV'},
+{bits: 5, name: '00111'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: '1'},
+{bits: 6, name: '101001'},
+]}
+....
+保留编码::
+* `SEW` 是除 32 以外的任何值
+* `vd` 寄存器组与 `vs2` 寄存器重叠
+
+参数::
+
+[%autowidth]
+[%header,cols="4,2,2,2,2,2"]
+|===
+|寄存器
+|方向
+|EGW
+|EGS
+|EEW
+|定义
+
+| vd  | 输入  | 128  | 4 | 32 | 轮状态
+| vs2 | 输入  | 128  | 4 | 32 | 轮密钥
+| vd  | 输出 | 128  | 4 | 32 | 新轮状态
+|===
+
+描述::
+执行轮 0 AES 分组密码操作。此操作用于加密和解密。
+
+指令只有 `.vs` 形式。
+`Vs2` 保存一个
+标量元素组，用作
+所有轮状态元素组的轮密钥。
+每个元素组的新轮状态输出通过将轮密钥与 `vd` 的每个元素组进行异或来生成。
+
+此指令必须始终实现，使其执行延迟不依赖于操作的数据。
+
+[NOTE]
+====
+此指令是为了避免在轮密钥对于所有 128 位“通道”都相同时，需要“扩展”128 位向量寄存器组。这种扩展通常会通过 `vrgather` 指令实现，这在许多实现中会损害性能。
+此指令仅以 `.vs` 形式存在，因为 `.vv` 形式将与 `vxor.vv vd, vs2, vd` 指令相同。
+====
+
+//
+// 要处理的元素组数量为 `vl`/`EGS`。
+// `vl` 必须设置为要处理的 `SEW=32` 元素的数量，因此必须是 `EGS=4` 的倍数。 +
+// 同样，`vstart` 必须是 `EGS=4` 的倍数。
+
+操作::
+[source,sail]
+--
+function clause execute (VAESZ(vs2, vd) = {
+  if(((vstart%EGS)<>0) | (LMUL*VLEN < EGW))  then {
+    handle_illegal();  // 非法指令异常
+    RETIRE_FAIL
+  } else {
+
+  eg_len = (vl/EGS)
+  eg_start = (vstart/EGS)
+
+  foreach (i from eg_start to eg_len-1) {
+    let state : bits(128) = get_velem(vd, EGW=128, i);
+    let rkey  : bits(128) = get_velem(vs2, EGW=128, 0);
+    let ark   : bits(128) = state ^ rkey;
+    set_velem(vd, EGW=128, i, ark);
+  }
+  RETIRE_SUCCESS
+  }
+}
+--
+
+包含于::
+<<zvkn>>, <<zvknc>>, <<zvkned>>, <<zvkng>>
+
+<<<
+
+[[insns-vandn, 向量与非]]
+==== vandn.[vv,vx]
+
+概要::
+按位与非
+
+助记符::
+vandn.vv vd, vs2, vs1, vm +
+vandn.vx vd, vs2, rs1, vm
+
+编码 (向量-向量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-V'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPIVV'},
+{bits: 5, name: 'vs1'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: 'vm'},
+{bits: 6, name: '000001'},
+]}
+....
+
+编码 (向量-标量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-V'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPIVX'},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: 'vm'},
+{bits: 6, name: '000001'},
+]}
+....
+
+向量-向量参数::
+
+[%autowidth]
+[%header,cols="4,2,2"]
+|===
+|寄存器
+|方向
+|定义
+
+| Vs1 | 输入  | 操作数 1（将被反转）
+| Vs2 | 输入  | 操作数 2
+| Vd  | 输出 | 结果
+|===
+
+向量-标量参数::
+
+[%autowidth]
+[%header,cols="4,2,2"]
+|===
+|寄存器
+|方向
+|定义
+
+| Rs1     | 输入  | 操作数 1（将被反转）
+| Vs2     | 输入  | 操作数 2
+| Vd      | 输出 | 结果
+|===
+
+描述::

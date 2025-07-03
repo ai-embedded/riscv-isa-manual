@@ -1,0 +1,1143 @@
+[File content truncated: showing lines 1-2000 of 4966 total lines. Use offset/limit parameters to view more.]
+== 密码学扩展：向量指令，版本 1.0
+
+本文档描述了 RISC-V 指令集架构的向量密码学扩展。
+
+[[crypto_vector_introduction]]
+=== 引言
+
+本文档描述了 RISC-V _向量_ 密码学扩展。
+此处提出的所有指令都基于向量寄存器。
+这些指令旨在实现高性能，主要目标是大型应用程序和服务器级核心。
+配套章节 _第一卷：标量和熵源指令_，描述了
+不实现向量扩展的小型核心的密码学指令提案。
+
+[[crypto_vector_audience]]
+==== 目标受众
+
+密码学是一个专业领域，需要具有不同背景的人员合作才能安全高效地实现。
+在可能的情况下，我们编写本规范时力求让所有人都能理解，尽管我们认识到，对于非领域专家来说，动机以及对算法或其他规范和标准的引用可能不熟悉。
+
+本规范预计将被具有不同背景的各种人士阅读和采纳。
+我们试图在此处捕捉这些背景，并简要说明我们期望他们了解什么，以及这与规范的关系。
+我们希望这有助于人们理解规范的哪些方面与他们特别相关，以及他们可以（安全地！）忽略或交给同事的方面。
+
+密码学家和密码软件开发人员::
+我们期望这些人使用本规范中的指令编写代码。
+他们应该相当清楚地理解我们包含的指令的动机，并熟悉我们引用的大多数算法和外部标准。
+我们期望常数时间执行部分
+(<<crypto_scalar_zkt>>)
+和熵源部分
+(<<crypto_scalar_es>>)
+主要在他们的帮助下理解。
+
+计算机架构师::
+我们不期望架构师具有密码学背景。
+尽管如此，我们仍然期望架构师能够检查我们的指令是否存在实现问题，理解指令将如何在上下文中被使用，并就如何最好地将密码学家想要的功能与 ISA 接口匹配提供建议。
+
+数字设计工程师和微架构师::
+这些人将在核心内部实现规范。同样，不假定具备密码学专业知识，但我们期望他们解释规范并预测任何硬件实现问题，例如，在高频设计考虑适用或存在延迟/面积权衡等情况下。
+特别是，他们应该了解围绕高效实现 AES 和 SM4 SBox 的文献。
+
+验证工程师::
+这些人负责确保硬件中扩展的正确实现。
+不假定具备密码学背景。
+我们期望他们从规范中识别有趣的测试用例。了解其在实际世界中的用法将有助于此。
+
+这些人绝不是唯一关注本规范的人，但他们在我们撰写本规范时是我们考虑最多的人。
+
+[[crypto_vector_sail_specifications]]
+==== Sail 规范
+
+RISC-V 维护一个
+link:https://github.com/riscv/sail-riscv[形式化模型]
+的 ISA 规范，
+使用 Sail ISA 规范语言实现
+cite:[sail]。
+请注意，_Sail_ 指的是规范语言本身，
+并且有一个 _RISC-V 模型_，使用 Sail 编写。
+将“Sail 模型”称为不正确。
+鉴于使用 Sail 实现了许多不同 ISA 的模型，这会产生歧义。
+我们将 RISC-V 的 Sail 实现称为
+“RISC-V Sail 模型”。
+
+密码学扩展使用来自实际模型的内联 Sail 代码片段，以提供指令功能的规范描述。
+每条指令都附有其在 Sail 中的表达式，并包含对支持函数的调用，这些函数过于冗长，无法直接包含在规范中。
+此支持代码列在
+<<crypto_vector_appx_sail>> 中。
+
+建议阅读
+link:https://alasdair.github.io/manual.html[Sail 手册]
+以更好地理解代码片段。
+此外，
+link:https://github.com/billmcspadden-riscv/sail/blob/cookbook_br/cookbook/doc/TheSailCookbook_Complete.pdf[Sail 编程语言：Sail 食谱]
+是一个很好的参考。
+
+有关最新的 RISC-V Sail 模型，请参阅
+形式化模型 GitHub
+link:https://github.com/riscv/sail-riscv[仓库]。
+
+[[crypto_vector_policies]]
+==== 策略
+
+在创建此提案时，我们努力遵守以下策略：
+
+* 在以下选择之间：
+  1) 支持算法的多种实现策略
+  或
+  2) 支持单一的、性能更高/成本更低的实现风格；
+  向量密码扩展将选择更受约束但性能更高的选项。
+  这符合 RISC-V 规范其他部分的常见模式，
+  其中执行特定任务的推荐（但非必需）指令序列作为示例给出，
+  以便硬件和软件实现者可以仅针对单一用例进行优化。
+
+* 扩展将旨在很好地支持 _现有_ 标准化密码结构。
+  它不会尝试支持提议的标准，或仅存在于学术界的密码结构。
+  与 RISC-V 密码扩展标准化同时或之后确定的密码标准将通过
+  未来对 RISC-V 密码标准扩展的添加或版本进行处理。
+  预计 NIST 轻量级密码竞赛和 NIST 后量子密码竞赛
+  可能会根据时间表以这种方式处理。
+
+* 从历史上看，曾有一些讨论
+  cite:[LSYRR:04]
+  关于通用计算中新支持的操作如何
+  为密码算法启用新基础。
+  标准不会尝试预测新的有用低级操作，这些操作 _可能_ 有用作
+  未来密码结构的构建块。
+
+* 关于侧信道对策：
+  在相关情况下，提议的指令必须旨在消除任何时序侧信道的可能性。
+  对于基于功耗或电磁 (EM) 测量的侧信道，
+  扩展不会旨在支持在 ISA 抽象层之上实现的对策。
+  将在相关情况下提供关于微架构如何以抗功耗/EM 侧信道方式实现指令的建议。
+
+[[crypto_vector_extensions]]
+=== 扩展概述
+
+此处列出了向量密码学指令集扩展引入的扩展组。
+
+单个密码学扩展的检测使用
+统一的基于软件的 RISC-V 发现方法。
+
+[NOTE]
+====
+在撰写本文时，这些发现机制仍在开发中。
+====
+
+.扩展原理说明
+[NOTE, caption="SH"]
+====
+专业的加密和解密指令被分成不同的功能组，因为某些用例（例如 TLS 1.3 中的 Galois/Counter 模式）不需要解密功能。
+
+NIST 和 ShangMi 算法套件是分开的，因为它们的有用性在很大程度上取决于设备预期运行的国家。NIST 密码是大多数标准化互联网协议的一部分，而 ShangMi 密码在中国是必需的。
+====
+
+[[zbkb-sc,Zbkb-sc]]
+==== `Zbkb` - 用于密码学的位操作指令
+
+此扩展包含对密码学特别有用的位操作指令，其中大多数也包含在 `Zbb` 扩展中。
+请参阅 <<b-st-ext.adoc#zbkb>>。
+
+[[zbkc-sc,Zbkc-sc]]
+==== `Zbkc` - 无进位乘法指令
+
+用于 Galois/Counter 模式的常数时间无进位乘法。
+这些指令与 <<b-st-ext.adoc#zbkb>> 分开，因为它们具有相当大的实现开销，无法在其他指令中分摊。
+
+请参阅 <<b-st-ext.adoc#zbkc>>。
+
+[[zbkx-sc,Zbkx-sc]]
+==== `Zbkx` - 交叉开关置换指令
+
+这些指令对于在常数时间内实现 SBox 非常有用，并且可能具有 DPA 保护。
+这些指令与 <<b-st-ext.adoc#zbkb>> 分开，因为它们具有实现开销，无法在其他指令中分摊。
+
+请参阅 <<b-st-ext.adoc#zbkx>>。
+
+[[zknd,Zknd]]
+==== `Zknd` - NIST 套件：AES 解密
+
+用于加速 AES 分组密码的解密和密钥调度功能的指令。
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+| &#10003; |          | aes32dsi     | <<insns-aes32dsi>>
+| &#10003; |          | aes32dsmi    | <<insns-aes32dsmi>>
+|          | &#10003; | aes64ds      | <<insns-aes64ds>>
+|          | &#10003; | aes64dsm     | <<insns-aes64dsm>>
+|          | &#10003; | aes64im      | <<insns-aes64im>>
+|          | &#10003; | aes64ks1i    | <<insns-aes64ks1i>>
+|          | &#10003; | aes64ks2     | <<insns-aes64ks2>>
+|===
+
+NOTE: <<insns-aes64ks1i>> 和 <<insns-aes64ks2>> 指令同时存在于 <<zknd>> 和 <<zkne>> 扩展中。
+
+[[zkne,Zkne]]
+==== `Zkne` - NIST 套件：AES 加密
+
+用于加速 AES 分组密码的加密和密钥调度功能的指令。
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+| &#10003; |          | aes32esi     | <<insns-aes32esi>>
+| &#10003; |          | aes32esmi    | <<insns-aes32esmi>>
+|          | &#10003; | aes64es      | <<insns-aes64es>>
+|          | &#10003; | aes64esm     | <<insns-aes64esm>>
+|          | &#10003; | aes64ks1i    | <<insns-aes64ks1i>>
+|          | &#10003; | aes64ks2     | <<insns-aes64ks2>>
+|===
+
+NOTE: 
+<<insns-aes64ks1i,`aes64ks1i`>>
+和
+<<insns-aes64ks2,`aes64ks2`>>
+指令同时存在于 <<zknd>> 和 <<zkne>> 扩展中。
+
+[[zknh,Zknh]]
+==== `Zknh` - NIST 套件：哈希函数指令
+
+用于加速 SHA2 系列密码哈希函数的指令，
+如 cite:[nist:fips:180:4] 中指定。
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+| &#10003; | &#10003; | sha256sig0   | <<insns-sha256sig0>>
+| &#10003; | &#10003; | sha256sig1   | <<insns-sha256sig1>>
+| &#10003; | &#10003; | sha256sum0   | <<insns-sha256sum0>>
+| &#10003; | &#10003; | sha256sum1   | <<insns-sha256sum1>>
+| &#10003; |          | sha512sig0h  | <<insns-sha512sig0h>>
+| &#10003; |          | sha512sig0l  | <<insns-sha512sig0l>>
+| &#10003; |          | sha512sig1h  | <<insns-sha512sig1h>>
+| &#10003; |          | sha512sig1l  | <<insns-sha512sig1l>>
+| &#10003; |          | sha512sum0r  | <<insns-sha512sum0r>>
+| &#10003; |          | sha512sum1r  | <<insns-sha512sum1r>>
+|          | &#10003; | sha512sig0   | <<insns-sha512sig0>>
+|          | &#10003; | sha512sig1   | <<insns-sha512sig1>>
+|          | &#10003; | sha512sum0   | <<insns-sha512sum0>>
+|          | &#10003; | sha512sum1   | <<insns-sha512sum1>>
+|===
+
+[[zksed,Zksed]]
+==== `Zksed` - ShangMi 套件：SM4 分组密码指令
+
+用于加速 SM4 分组密码的指令。
+请注意，与 AES 不同，此密码使用相同的核心操作进行加密和解密，因此只有一个扩展。
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+| &#10003; | &#10003; | sm4ed        | <<insns-sm4ed>>
+| &#10003; | &#10003; | sm4ks        | <<insns-sm4ks>>
+|===
+
+[[zksh,Zksh]]
+==== `Zksh` - ShangMi 套件：SM3 哈希函数指令
+
+用于加速 SM3 哈希函数的指令。
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+| &#10003; | &#10003; | sm3p0        | <<insns-sm3p0>>
+| &#10003; | &#10003; | sm3p1        | <<insns-sm3p1>>
+|===
+
+[[zkr,Zkr]]
+==== `Zkr` - 熵源扩展
+
+熵源扩展定义了地址为 `0x015` 的 `seed` CSR。
+此 CSR 提供多达 16 个物理 `entropy` 位，可用于
+为密码随机位生成器播种。
+
+请参阅 <<crypto_scalar_es>> 了解规范性规范和访问控制说明。
+<<crypto_scalar_appx_es>> 包含设计原理和对实现者的进一步建议。
+
+[[zkn,Zkn]]
+==== `Zkn` - NIST 算法套件
+
+此扩展是以下其他扩展集的简写：
+
+[%header,cols="^1,4"]
+|===
+|包含的扩展
+|描述
+
+| <<zbkb-sc>>  | 用于密码学的位操作指令。
+| <<zbkc-sc>>  | 无进位乘法指令。
+| <<zbkx-sc>>  | 交叉开关置换指令。
+| <<zkne>>  | AES 加密指令。
+| <<zknd>>  | AES 解密指令。
+| <<zknh>>  | SHA2 哈希函数指令。
+|===
+
+实现 `Zkn` 的核心必须实现上述所有扩展。
+
+[[zks,Zks]]
+==== `Zks` - ShangMi 算法套件
+
+此扩展是以下其他扩展集的简写：
+
+[%header,cols="^1,4"]
+|===
+|包含的扩展
+|描述
+
+| <<zbkb-sc>>  | 用于密码学的位操作指令。
+| <<zbkc-sc>>  | 无进位乘法指令。
+| <<zbkx-sc>>  | 交叉开关置换指令。
+| <<zksed>> | SM4 分组密码指令。
+| <<zksh>>  | SM3 哈希函数指令。
+|===
+
+实现 `Zks` 的核心必须实现上述所有扩展。
+
+[[zk,Zk]]
+==== `Zk` - 标准标量密码学扩展
+
+此扩展是以下其他扩展集的简写：
+
+[%header,cols="^1,4"]
+|===
+|包含的扩展
+|描述
+
+| <<zkn>>  | NIST 算法套件扩展。
+| <<zkr>>  | 熵源扩展。
+| <<crypto_scalar_zkt,Zkt>>  | 数据无关执行延迟扩展。
+|===
+
+实现 `Zk` 的核心必须实现上述所有扩展。
+
+==== `Zkt` - 数据无关执行延迟
+
+此扩展允许 CPU 实现者向
+密码软件开发人员指示，RISC-V 指令的子集
+保证以其执行延迟
+独立于其操作的数据值的方式实现。
+此扩展的完整描述可在
+<<crypto_scalar_zkt>> 中找到。
+
+// ------------------------------------------------------------
+
+[[crypto_scalar_insns, reftext="标量密码学指令"]]
+=== 指令
+
+[#insns-aes32dsi, reftext="AES 最终轮解密 (RV32)"]
+==== aes32dsi
+
+概要::
+RV32 的 AES 最终轮解密指令。
+
+助记符::
+aes32dsi rd, rs1, rs2, bs
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x0},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 5, name: 0x15},
+{bits: 2, name: 'bs'},
+]}
+....
+
+描述::
+此指令根据 `bs` 从 `rs2` 获取单个字节。
+然后对其应用逆 AES SBox 操作，并与 `rs1` 进行异或。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+操作::
+[source,sail]
+--
+function clause execute (AES32DSI (bs,rs2,rs1,rd)) = {
+  let shamt   : bits( 5) = bs @ 0b000; /* shamt = bs*8 */
+  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox Input */
+  let so      : bits(32) = 0x000000 @ aes_sbox_inv(si);
+  let result  : bits(32) = X(rs1)[31..0] ^ rol32(so, unsigned(shamt));
+  X(rd) = EXTS(result); RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zknd>> (RV32)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV32)
+| v1.0.0
+| 已批准
+| <<zk>> (RV32)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes32dsmi, reftext="AES 中间轮解密 (RV32)"]
+==== aes32dsmi
+
+概要::
+RV32 的 AES 中间轮解密指令。
+
+助记符::
+aes32dsmi rd, rs1, rs2, bs
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x0},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 5, name: 0x17},
+{bits: 2, name: 'bs'},
+]}
+....
+
+描述::
+此指令根据 `bs` 从 `rs2` 获取单个字节。
+然后对其应用逆 AES SBox 操作和部分逆 MixColumn，然后与 `rs1` 进行异或。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+操作::
+[source,sail]
+--
+function clause execute (AES32DSMI (bs,rs2,rs1,rd)) = {
+  let shamt   : bits( 5) = bs @ 0b000; /* shamt = bs*8 */
+  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox Input */
+  let so      : bits( 8) = aes_sbox_inv(si);
+  let mixed   : bits(32) = aes_mixcolumn_byte_inv(so);
+  let result  : bits(32) = X(rs1)[31..0] ^ rol32(mixed, unsigned(shamt));
+  X(rd) = EXTS(result); RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zknd>> (RV32)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV32)
+| v1.0.0
+| 已批准
+| <<zk>> (RV32)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes32esi, reftext="AES 最终轮加密 (RV32)"]
+==== aes32esi
+
+概要::
+RV32 的 AES 最终轮加密指令。
+
+助记符::
+aes32esi rd, rs1, rs2, bs
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x0},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 5, name: 0x11},
+{bits: 2, name: 'bs'},
+]}
+....
+
+描述::
+此指令根据 `bs` 从 `rs2` 获取单个字节。
+然后对其应用正向 AES SBox 操作，
+然后与 `rs1` 进行异或。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+操作::
+[source,sail]
+--
+function clause execute (AES32ESI (bs,rs2,rs1,rd)) = {
+  let shamt   : bits( 5) = bs @ 0b000; /* shamt = bs*8 */
+  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox Input */
+  let so      : bits(32) = 0x000000 @ aes_sbox_fwd(si);
+  let result  : bits(32) = X(rs1)[31..0] ^ rol32(so, unsigned(shamt));
+  X(rd) = EXTS(result); RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zkne>> (RV32)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV32)
+| v1.0.0
+| 已批准
+| <<zk>> (RV32)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes32esmi, reftext="AES 中间轮加密 (RV32)"]
+==== aes32esmi
+
+概要::
+RV32 的 AES 中间轮加密指令。
+
+助记符::
+aes32esmi rd, rs1, rs2, bs
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x0},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 5, name: 0x13},
+{bits: 2, name: 'bs'},
+]}
+....
+
+描述::
+此指令根据 `bs` 从 `rs2` 获取单个字节。
+然后对其应用正向 AES SBox 操作和部分正向 MixColumn，然后与 `rs1` 进行异或。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+操作::
+[source,sail]
+--
+function clause execute (AES32ESMI (bs,rs2,rs1,rd)) = {
+  let shamt   : bits( 5) = bs @ 0b000; /* shamt = bs*8 */
+  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox Input */
+  let so      : bits( 8) = aes_sbox_fwd(si);
+  let mixed   : bits(32) = aes_mixcolumn_byte_fwd(so);
+  let result  : bits(32) = X(rs1)[31..0] ^ rol32(mixed, unsigned(shamt));
+  X(rd) = EXTS(result); RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zkne>> (RV32)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV32)
+| v1.0.0
+| 已批准
+| <<zk>> (RV32)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes64ds, reftext="AES 解密最终轮 (RV64)"]
+==== aes64ds
+
+概要::
+RV64 的 AES 最终轮解密指令。
+
+助记符::
+aes64ds rd, rs1, rs2
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x0},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 5, name: 0x1d},
+{bits: 2, name: 0x0},
+]}
+....
+
+描述::
+使用两个 64 位源寄存器表示整个 AES 状态，
+并产生下一轮输出的 _一半_，应用逆 ShiftRows
+和 SubBytes 步骤。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+.软件开发人员注意事项
+[NOTE,caption="SH"]
+====
+以下代码片段显示了 AES 分组解密的最终轮。
+`t0` 和 `t1` 保存当前轮状态。
+`t2` 和 `t3` 保存下一轮状态。
+
+  aes64ds t2, t0, t1
+  aes64ds t3, t1, t0
+
+请注意第二条指令的寄存器顺序颠倒了。
+====
+
+操作::
+[source,sail]
+--
+function clause execute (AES64DS(rs2, rs1, rd)) = {
+  let sr : bits(64) = aes_rv64_shiftrows_inv(X(rs2)[63..0], X(rs1)[63..0]);
+  let wd : bits(64) = sr[63..0];
+  X(rd) = aes_apply_inv_sbox_to_each_byte(wd);
+  RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zknd>> (RV64)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV64)
+| v1.0.0
+| 已批准
+| <<zk>> (RV64)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes64dsm, reftext="AES 解密中间轮 (RV64)"]
+==== aes64dsm
+
+概要::
+RV64 的 AES 中间轮解密指令。
+
+助记符::
+aes64dsm rd, rs1, rs2
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x0},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 5, name: 0x1f},
+{bits: 2, name: 0x0},
+]}
+....
+
+描述::
+使用两个 64 位源寄存器表示整个 AES 状态，
+并产生下一轮输出的 _一半_，应用逆 ShiftRows、
+SubBytes 和 MixColumns 步骤。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+.软件开发人员注意事项
+[NOTE,caption="SH"]
+====
+以下代码片段显示了 AES 分组解密的一个中间轮。
+`t0` 和 `t1` 保存当前轮状态。
+`t2` 和 `t3` 保存下一轮状态。
+
+  aes64dsm t2, t0, t1
+  aes64dsm t3, t1, t0
+
+请注意第二条指令的寄存器顺序颠倒了。
+====
+
+操作::
+[source,sail]
+--
+function clause execute (AES64DSM(rs2, rs1, rd)) = {
+  let sr : bits(64) = aes_rv64_shiftrows_inv(X(rs2)[63..0], X(rs1)[63..0]);
+  let wd : bits(64) = sr[63..0];
+  let sb : bits(64) = aes_apply_inv_sbox_to_each_byte(wd);
+  X(rd)  = aes_mixcolumn_inv(sb[63..32]) @ aes_mixcolumn_inv(sb[31..0]);
+  RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zknd>> (RV64)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV64)
+| v1.0.0
+| 已批准
+| <<zk>> (RV64)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes64es, reftext="AES 加密最终轮指令 (RV64)"]
+==== aes64es
+
+概要::
+RV64 的 AES 最终轮加密指令。
+
+助记符::
+aes64es rd, rs1, rs2
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x0},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 5, name: 0x19},
+{bits: 2, name: 0x0},
+]}
+....
+
+描述::
+使用两个 64 位源寄存器表示整个 AES 状态，
+并产生下一轮输出的 _一半_，应用 ShiftRows 和
+SubBytes 步骤。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+.软件开发人员注意事项
+[NOTE,caption="SH"]
+====
+以下代码片段显示了 AES 分组加密的最终轮。
+`t0` 和 `t1` 保存当前轮状态。
+`t2` 和 `t3` 保存下一轮状态。
+
+  aes64es t2, t0, t1
+  aes64es t3, t1, t0
+
+请注意第二条指令的寄存器顺序颠倒了。
+====
+
+操作::
+[source,sail]
+--
+function clause execute (AES64ES(rs2, rs1, rd)) = {
+  let sr : bits(64) = aes_rv64_shiftrows_fwd(X(rs2)[63..0], X(rs1)[63..0]);
+  let wd : bits(64) = sr[63..0];
+  X(rd) = aes_apply_fwd_sbox_to_each_byte(wd);
+  RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zkne>> (RV64)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV64)
+| v1.0.0
+| 已批准
+| <<zk>> (RV64)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes64esm, reftext="AES 加密中间轮指令 (RV64)"]
+==== aes64esm
+
+概要::
+RV64 的 AES 中间轮加密指令。
+
+助记符::
+aes64esm rd, rs1, rs2
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x0},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 5, name: 0x1b},
+{bits: 2, name: 0x0},
+]}
+....
+
+描述::
+使用两个 64 位源寄存器表示整个 AES 状态，
+并产生下一轮输出的 _一半_，应用 ShiftRows、
+SubBytes 和 MixColumns 步骤。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+.软件开发人员注意事项
+[NOTE,caption="SH"]
+====
+以下代码片段显示了 AES 分组加密的一个中间轮。
+`t0` 和 `t1` 保存当前轮状态。
+`t2` 和 `t3` 保存下一轮状态。
+
+  aes64esm t2, t0, t1
+  aes64esm t3, t1, t0
+
+请注意第二条指令的寄存器顺序颠倒了。
+====
+
+操作::
+[source,sail]
+--
+function clause execute (AES64ESM(rs2, rs1, rd)) = {
+  let sr : bits(64) = aes_rv64_shiftrows_fwd(X(rs2)[63..0], X(rs1)[63..0]);
+  let wd : bits(64) = sr[63..0];
+  let sb : bits(64) = aes_apply_fwd_sbox_to_each_byte(wd);
+  X(rd)  =  aes_mixcolumn_fwd(sb[63..32]) @ aes_mixcolumn_fwd(sb[31..0]);
+  RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zkne>> (RV64)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV64)
+| v1.0.0
+| 已批准
+| <<zk>> (RV64)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes64im, reftext="AES 解密密钥调度 MixColumns (RV64)"]
+==== aes64im
+
+概要::
+此指令加速 AES 分组密码的逆 MixColumns 步骤，
+并用于辅助创建解密密钥调度。
+
+助记符::
+aes64im rd, rs1
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x13},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x1},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 0x0},
+{bits: 5, name: 0x18},
+{bits: 2, name: 0x0},
+]}
+....
+
+描述::
+此指令将逆 MixColumns 变换应用于状态数组的两列，打包到单个 64 位寄存器中。
+它用于根据 cite:[nist:fips:197]（第 23 页，第 5.3.5 节）中的等效逆密码构造创建逆密码密钥调度。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+操作::
+[source,sail]
+--
+function clause execute (AES64IM(rs1, rd)) = {
+  let w0 : bits(32) = aes_mixcolumn_inv(X(rs1)[31.. 0]);
+  let w1 : bits(32) = aes_mixcolumn_inv(X(rs1)[63..32]);
+  X(rd)  = w1 @ w0;
+  RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zknd>> (RV64)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV64)
+| v1.0.0
+| 已批准
+| <<zk>> (RV64)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes64ks1i, reftext="AES 密钥调度指令 1 (RV64)"]
+==== aes64ks1i
+
+概要::
+此指令实现 AES 分组密码密钥调度操作的一部分，涉及 SBox 操作。
+
+助记符::
+aes64ks1i rd, rs1, rnum
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x13},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x1},
+{bits: 5, name: 'rs1'},
+{bits: 4, name: 'rnum'},
+{bits: 1, name: 0x1},
+{bits: 5, name: 0x18},
+{bits: 2, name: 0},
+]}
+....
+
+描述::
+此指令实现 AES 分组密码密钥调度的旋转、SubBytes 和轮常数加法步骤。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+请注意，`rnum` 必须在 `0x0..0xA` 范围内。
+`0xB..0xF` 的值是保留的。
+
+操作::
+[source,sail]
+--
+function clause execute (AES64KS1I(rnum, rs1, rd)) = {
+  if(unsigned(rnum) > 10) then {
+    handle_illegal();  RETIRE_SUCCESS
+  } else {
+    let tmp1 : bits(32) = X(rs1)[63..32];
+    let rc   : bits(32) = aes_decode_rcon(rnum); /* round number -> round constant */
+    let tmp2 : bits(32) = if (rnum ==0xA) then tmp1 else ror32(tmp1, 8);
+    let tmp3 : bits(32) = aes_subword_fwd(tmp2);
+    let result : bits(64) = (tmp3 ^ rc) @ (tmp3 ^ rc);
+    X(rd) = EXTZ(result);
+    RETIRE_SUCCESS
+  }
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zkne>> (RV64)
+| v1.0.0
+| 已批准
+| <<zknd>> (RV64)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV64)
+| v1.0.0
+| 已批准
+| <<zk>> (RV64)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-aes64ks2, reftext="AES 密钥调度指令 2 (RV64)"]
+==== aes64ks2
+
+概要::
+此指令实现 AES 分组密码密钥调度操作的一部分。
+
+助记符::
+aes64ks2 rd, rs1, rs2
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x0},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 5, name: 0x1f},
+{bits: 2, name: 0x1},
+]}
+....
+
+描述::
+此指令实现密钥字附加异或操作，作为 AES 分组密码密钥调度的一部分。
+此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+
+操作::
+[source,sail]
+--
+function clause execute (AES64KS2(rs2, rs1, rd)) = {
+  let w0 : bits(32) = X(rs1)[63..32] ^ X(rs2)[31..0];
+  let w1 : bits(32) = X(rs1)[63..32] ^ X(rs2)[31..0] ^ X(rs2)[63..32];
+  X(rd)  = w1 @ w0;
+  RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zkne>> (RV64)
+| v1.0.0
+| 已批准
+| <<zknd>> (RV64)
+| v1.0.0
+| 已批准
+| <<zkn>> (RV64)
+| v1.0.0
+| 已批准
+| <<zk>> (RV64)
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-andn,reftext="按位与非"]
+==== vandn.[vv,vx]
+
+概要::
+按位与非
+
+助记符::
+vandn.vv vd, vs2, vs1, vm +
+vandn.vx vd, vs2, rs1, vm
+
+编码 (向量-向量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-V'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPIVV'},
+{bits: 5, name: 'vs1'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: 'vm'},
+{bits: 6, name: '000001'},
+]}
+....
+
+编码 (向量-标量)::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 'OP-V'},
+{bits: 5, name: 'vd'},
+{bits: 3, name: 'OPIVX'},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'vs2'},
+{bits: 1, name: 'vm'},
+{bits: 6, name: '000001'},
+]}
+....
+
+向量-向量参数::
+
+[%autowidth]
+[%header,cols="4,2,2"]
+|===
+|寄存器
+|方向
+|定义
+
+| Vs1 | 输入  | 操作数 1（将被反转）
+| Vs2 | 输入  | 操作数 2
+| Vd  | 输出 | 结果
+|===
+
+向量-标量参数::
+
+[%autowidth]
+[%header,cols="4,2,2"]
+|===
+|寄存器
+|方向
+|定义
+
+| Rs1     | 输入  | 操作数 1（将被反转）
+| Vs2     | 输入  | 操作数 2
+| Vd      | 输出 | 结果
+|===
+
+描述::

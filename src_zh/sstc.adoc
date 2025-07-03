@@ -1,0 +1,93 @@
+[[Sstc]]
+== “Sstc”扩展：Supervisor 模式定时器中断，版本 1.0
+
+当前的特权架构规范仅定义了用于生成机器模式定时器中断的硬件机制（基于 mtime 和 mtimecmp 寄存器）。因此，S 模式/HS 模式（以及 VS 模式）的定时器服务都必须由 M 模式提供——通过从 S/HS 模式到 M 模式的 SBI 调用（或从 VS 模式到 HS 模式再到 M 模式的调用）。然后，M 模式软件将这些多个逻辑定时器多路复用到其一个物理 M 模式定时器设施上，并且 M 模式定时器中断处理程序将定时器中断传递回适当的较低特权模式。
+
+此扩展旨在为 supervisor 模式提供其自己的基于 CSR 的定时器中断设施，它可以直接管理该设施以提供自己的定时器服务（以拥有自己的 stimecmp 寄存器的形式）——从而消除了在 M 模式下模拟 S/HS 模式定时器和定时器中断生成的巨大开销。此外，此扩展还为 hypervisor 扩展的 VS 模式添加了类似的功能。
+
+扩展名称是“Sstc”（“Ss”表示特权架构和 Supervisor 级扩展，“tc”表示 timecmp）。此扩展添加了 S 级 stimecmp CSR 和 VS 级 vstimecmp CSR。
+
+=== 机器和 Supervisor 级别新增功能
+
+==== Supervisor 定时器 (`stimecmp`) 寄存器
+
+此扩展添加了此新 CSR。
+
+`stimecmp` CSR 是一个 64 位寄存器，在所有 RV32 和 RV64 系统上都具有 64 位精度。仅在 RV32 中，对 `stimecmp` CSR 的访问会访问低 32 位，而对 `stimecmph` CSR 的访问会访问 `stimecmp` 的高 32 位。
+
+`stimecmp` / `stimecmph` 的 CSR 编号是 0x14D / 0x15D（在 CSR 的 Supervisor 陷阱设置块中）。
+
+当 `time` 包含一个大于或等于 `stimecmp` 的值时（将这些值视为无符号整数），supervisor 定时器中断变为待处理，如 `mip` 和 `sip` 寄存器中的 STIP 位所示。
+如果此比较结果发生变化，则保证最终（但不一定立即）反映在 STIP 中。
+中断保持发布状态，直到 `stimecmp` 变得大于 `time`，通常是由于写入 `stimecmp`。
+中断将根据标准中断使能和委托规则进行处理。
+
+[NOTE]
+====
+如果中断处理程序推进 `stimecmp` 然后立即返回，则可能会发生虚假定时器中断，因为 STIP 可能尚未在此期间下降。所有软件都应编写为假定此事件可能发生，但大多数软件应假定此事件极不可能发生。通常，偶尔发生虚假定时器中断比轮询 STIP 直到它下降更具性能。
+====
+
+[NOTE]
+====
+在通过 SBI 函数调用提供定时器功能的系统（其中 SEE 提供定时器功能）中，此 SBI 调用将继续支持调度定时器中断的请求。SEE 将简单地利用 stimecmp，根据需要更改其值。这确保了与使用此 SEE 功能的现有 S 模式软件的兼容性，而新的 S 模式软件直接利用 stimecmp。)
+====
+
+==== 机器中断 (`mip` 和 `mie`) 寄存器
+
+此扩展修改了这些寄存器中 STIP/STIE 位的描述，如下所示：
+
+如果实现了 supervisor 模式，其 mip.STIP 和 mie.STIE 是 supervisor 级定时器中断的中断待处理和中断使能位。如果未实现 stimecmp 寄存器，则 STIP 在 mip 中是可写的，并且 M 模式软件可以写入它以将定时器中断传递给 S 模式。如果实现了 `stimecmp`（supervisor 模式定时器比较）寄存器，则 STIP 在 mip 中是只读的，并反映 stimecmp 产生的 supervisor 级定时器中断信号。此定时器中断信号通过写入 `stimecmp` 一个大于当前时间值的值来清除。
+
+==== Supervisor 中断 (`sip` 和 `sie`) 寄存器
+
+此扩展修改了这些寄存器中 STIP/STIE 位的描述，如下所示：
+
+`sip`.STIP 和 `sie`.STIE 位是 supervisor 级定时器中断的中断待处理和中断使能位。如果实现，STIP 在 sip 中是只读的，并且要么由执行环境设置和清除（如果未实现 `stimecmp`），要么反映 `stimecmp` 产生的定时器中断信号（如果实现了 `stimecmp`）。`sip`.STIP 位响应 `stimecmp` 生成的定时器中断，通过写入 `stimecmp` 一个小于或等于当前时间值或大于当前时间值的值来设置和清除。
+
+==== 机器计数器使能 (`mcounteren`) 寄存器
+
+此扩展将 TM 位添加到此寄存器的描述中，如下所示：
+
+此外，当 mcounteren 寄存器中的 TM 位清除时，在低于 M 的模式下执行时尝试访问 `stimecmp` 或 `vstimecmp` 寄存器将导致非法指令异常。当此位设置时，允许在 S 模式下访问 `stimecmp` 或 `vstimecmp` 寄存器（如果实现），并且允许在 VS 模式下访问 `vstimecmp` 寄存器（通过 `stimecmp`），如果实现且未被 `hcounteren` 中的 TM 位阻止。
+
+=== Hypervisor 扩展新增功能
+
+==== 虚拟 Supervisor 定时器 (`vstimecmp`) 寄存器
+
+此扩展添加了此新 CSR。
+
+`vstimecmp` CSR 是一个 64 位寄存器，在所有 RV32 和 RV64 系统上都具有 64 位精度。仅在 RV32 中，对 `vstimecmp` CSR 的访问会访问低 32 位，而对 `vstimecmph` CSR 的访问会访问 `vstimecmp` 的高 32 位。
+
+`vstimecmp` / `vstimecmph` 的 CSR 编号是 0x24D / 0x25D（在 CSR 的虚拟 Supervisor 寄存器块中，并镜像 stimecmp/stimecmph 的 CSR 编号）。
+
+当 (`time` + `htimedelta`) 截断为 64 位后，包含一个大于或等于 `vstimecmp` 的值时（将这些值视为无符号整数），虚拟 supervisor 定时器中断变为待处理，如 `hip` 寄存器中的 VSTIP 位所示。
+如果此比较结果发生变化，则保证最终（但不一定立即）反映在 VSTIP 中。
+中断保持发布状态，直到 `vstimecmp` 变得大于 (`time` + `htimedelta`)，通常是由于写入 `vstimecmp`。
+中断将根据标准中断使能和委托规则在 V=1 时进行处理。
+
+[NOTE]
+====
+在由 HS 模式 hypervisor 实现的 supervisor 执行环境 (SEE) 中，如果通过 SBI 函数调用提供定时器功能，则此 SBI 调用将继续支持调度定时器中断的请求。SEE 将简单地利用 vstimecmp，根据需要更改其值。这确保了与使用此 SEE 功能的现有客户 VS 模式软件的兼容性，而新的 VS 模式软件直接利用 vstimecmp。)
+====
+
+==== Hypervisor 中断 (`hvip`, `hip`, 和 `hie`) 寄存器
+
+此扩展修改了 hip/hie 寄存器中 VSTIP/VSTIE 位的描述，如下所示：
+
+hip.VSTIP 和 hie.VSTIE 位是 VS 级定时器中断的中断待处理和中断使能位。VSTIP 在 hip 中是只读的，并且是 hvip.VSTIP 和 `vstimecmp` 产生的定时器中断信号的逻辑或（如果实现了 `vstimecmp`）。hip.VSTIP 位响应 `vstimecmp` 生成的定时器中断，通过写入 `vstimecmp` 一个小于或等于当前 (`time` + `htimedelta`) 值或大于当前 (`time` + `htimedelta`) 值的值来设置和清除。hip.VSTIP 位在 V=0 和 V=1 时都保持定义。
+
+==== Hypervisor 计数器使能 (`hcounteren`) 寄存器
+
+此扩展将 TM 位添加到此寄存器的描述中，如下所示：
+
+此外，当 hcounteren 寄存器中的 TM 位清除时，在 VS 模式下执行时尝试访问 `vstimecmp` 寄存器（通过 stimecmp）将导致虚拟指令异常，如果 mcounteren 中相同的位设置。当此位和 mcounteren 中相同的位都设置时，允许在 VS 模式下访问 `vstimecmp` 寄存器（如果实现）。
+
+=== 环境配置 (`menvcfg` 和 `henvcfg`) 支持
+
+此扩展的启用/禁用位在新的 `menvcfg` / `henvcfg` CSR 中提供。
+
+`menvcfg` 的位 63（或 `menvcfgh` 的位 31）——命名为 STCE（STimecmp Enable）——在设置为 1 时启用 S 模式的 `stimecmp`，henvcfg 的相同位启用 VS 模式的 `vstimecmp`。这些 STCE 位是 WARL，当未实现此扩展时，它们被硬连线为 0。
+
+当此扩展实现且 `menvcfg` 中的 STCE 为零时，在 M 模式以外的模式下尝试访问 `stimecmp` 或 `vstimecmp` 会引发非法指令异常，`henvcfg` 中的 STCE 是只读零，并且 `mip` 和 `sip` 中的 STIP 恢复其定义行为，就像未实现此扩展一样。此外，如果实现了 H 扩展，则 hip.VSTIP 也恢复其定义行为，就像未实现此扩展一样。
+
+但是当 `menvcfg` 中的 STCE 为一且 `henvcfg` 中的 STCE 为零时，当 V = 1 时尝试访问 `stimecmp`（实际上是 `vstimecmp`）会引发虚拟指令异常，并且 hip 中的 VSTIP 恢复其定义行为，就像未实现此扩展一样。

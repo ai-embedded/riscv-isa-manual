@@ -1,0 +1,44 @@
+== “Zabha”——字节和半字原子内存操作扩展，版本 1.0
+
+A 扩展为“字”、“双字”和“四字”（仅适用于 `AMOCAS`）提供了原子内存操作 (AMO) 指令。由于缺少对子字数据类型的原子操作，因此需要采用模拟策略。对于位操作，可以通过字大小的位操作 AMO* 指令来执行此模拟。对于非位操作，可以使用字大小的 `LR`/`SC` 指令来实现模拟。
+
+这种模拟方法会带来一些限制：
+
+. 在具有大规模或非统一内存访问 (NUMA) 配置的系统中，基于 `LR`/`SC` 的模拟会引入与可伸缩性和公平性相关的问题，尤其是在高争用条件下。
+
+. 在非幂等 IO 内存区域上通过更宽的 AMO* 指令模拟更窄的 AMO 可能会导致意外的副作用。
+
+. 使用更宽的 AMO* 指令来模拟更窄的 AMO 会有激活无关断点或观察点的风险。
+
+. 在缺少对子字原子操作的本机支持的情况下，编译器通常会采用内联代码序列来提供所需的模拟。这种做法会导致代码大小增加，从而对系统性能和内存利用率产生影响。
+
+Zabha 扩展通过向 RISC-V 非特权 ISA 添加对“字节”和“半字”原子内存操作的支持来解决这些限制。Zabha 扩展依赖于 Zaamo 标准扩展。
+
+=== 字节和半字原子内存操作指令
+
+Zabha 扩展提供了 `AMO[ADD|AND|OR|XOR|SWAP|MIN[U]|MAX[U]].[B|H]` 指令。如果还实现了 Zacas 扩展，Zabha 还将提供 `AMOCAS.[B|H]` 指令。
+
+[wavedrom, zabha-ext-wavedrom-reg,svg]
+....
+{reg: [
+  {bits:  7, name: 'opcode', attr:['AMO','AMO','AMO','AMO','AMO','AMO','AMO','AMO']},
+  {bits:  5, name: 'rd', attr:['dest','dest','dest','dest','dest','dest','dest','dest']},
+  {bits:  3, name: 'funct3', attr:['width=0/1','width=0/1','width=0/1','width=0/1','width=0/1','width=0/1','width=0/1','width=0/1']},
+  {bits:  5, name: 'rs1', attr:['addr','addr','addr','addr','addr','addr','addr','addr']},
+  {bits:  5, name: 'rs2', attr:['src','src','src','src','src','src','src','src']},
+  {bits:  1, name: 'rl'},
+  {bits:  1, name: 'aq', attr:['ordering','ordering','ordering','ordering','ordering','ordering','ordering','ordering']},
+  {bits:  5, name: 'funct5', attr:['AMOSWAP.B/H','AMOADD.B/H','AMOAND.B/H','AMOOR.B/H','AMOXOR.B/H','AMOMAX[U].B/H','AMOMIN[U].B/H','AMOCAS.B/H']},
+], config:{lanes: 1, hspace:1024}}
+....
+
+字节和半字 AMO 总是对放入 `rd` 的值进行符号扩展，并忽略 `rs2` 中原始值的 stem:[XLEN-1:2^{(width + 3)}] 位。`AMOCAS.[B|H]` 指令同样忽略 `rd` 中原始值的 stem:[XLEN-1:2^{(width + 3)}] 位。
+
+与 A 扩展中指定的 AMO 类似，Zabha 扩展要求 `rs1` 寄存器中包含的地址必须与操作数的大小自然对齐。在地址未自然对齐的情况下，适用与 A 扩展中指定的相同的异常选项。
+
+与 A 和 Zacas 扩展中指定的 AMO 类似，Zabha 扩展中的 AMO 可选择性地提供释放一致性语义，使用 `aq` 和 `rl` 位来帮助实现多处理器同步。
+
+[NOTE]
+====
+由于效用较低，Zabha 省略了对 `LR` 和 `SC` 的“字节”和“半字”支持。
+====

@@ -1,0 +1,202 @@
+[[manual:unpriv,RISC-V ISA 手册第一卷：非特权架构]]
+= RISC-V 指令集手册第一卷：非特权架构
+include::../docs-resources/global-config.adoc[]
+:description: 非特权架构
+:revnumber: 20250508
+:revremark: 本文档处于已批准状态。
+:colophon:
+:preface-title: 序言
+:appendix-caption: 附录
+:imagesdir: ../docs-resources/images
+:title-logo-image: image:risc-v_logo.png["RISC-V International Logo",pdfwidth=3.25in,align=center]
+//:page-background-image: image:draft.png[opacity=20%]
+//:title-page-image: none
+//:back-cover-image: image:backpage.png[opacity=25%]
+:back-cover-image: image:riscv-horizontal-color.svg[opacity=25%]
+// Settings:
+:experimental:
+:reproducible:
+:imagesoutdir: {docdir}/../build/images-out
+:bibtex-file: resources/riscv-spec.bib
+:bibtex-order: alphabetical
+:bibtex-style: apa
+:bibtex-format: asciidoc
+:bibtex-throw: false
+:icons: font
+:lang: en
+:example-caption: 示例
+:listing-caption: 列表
+:sectnums:
+:sectnumlevels: 5
+:toc: left
+:toclevels: 5
+:source-highlighter: pygments
+ifdef::backend-pdf[]
+:source-highlighter: rouge
+endif::[]
+:table-caption: 表
+:figure-caption: 图
+:xrefstyle: short
+:chapter-refsig: 章
+:section-refsig: 节
+:appendix-refsig: 附录
+// Uncomment :data-uri: if your eBook reader is not capable of rendering
+// embedded images. One known affected device is PocketBook InkPad 3.
+:data-uri:
+:hide-uri-scheme:
+:stem: latexmath
+:footnote:
+:le: &#8804;
+:ge: &#8805;
+:ne: &#8800;
+:approx: &#8776;
+:inf: &#8734;
+:csrname: envcfg
+:imagesdir: images
+
+_所有版本规范的贡献者按字母顺序排列（请联系编辑以建议更正）：Derek Atkins,
+Arvind,
+Krste Asanović,
+Rimas Avižienis,
+Jacob Bachmeyer,
+Christopher F. Batten,
+Allen J. Baum,
+Abel Bernabeu,
+Alex Bradbury,
+Scott Beamer,
+Hans Boehm,
+Preston Briggs,
+Christopher Celio,
+Chuanhua Chang,
+David Chisnall,
+Paul Clayton,
+Palmer Dabbelt,
+L Peter Deutsch,
+Ken Dockser,
+Paul Donahue,
+Aaron Durbin,
+Roger Espasa,
+Greg Favor,
+Andy Glew,
+Shaked Flur,
+Stefan Freudenberger,
+Marc Gauthier,
+Andy Glew,
+Jan Gray,
+Gianluca Guida,
+Michael Hamburg,
+John Hauser,
+Christian Herber,
+John Ingalls,
+David Horner,
+Bruce Hoult,
+Bill Huffman,
+Alexandre Joannou,
+Olof Johansson,
+Ben Keller,
+David Kruckemyer,
+Tariq Kurd,
+Yunsup Lee,
+Paul Loewenstein,
+Daniel Lustig,
+Yatin Manerkar,
+Luc Maranget,
+Ben Marshall,
+Margaret Martonosi,
+Phil McCoy,
+Nathan Menhorn,
+Christoph Müllner,
+Joseph Myers,
+Vijayanand Nagarajan,
+Torbjørn Viem Ness,
+Rishiyur Nikhil,
+Jonas Oberhauser,
+Stefan O'Rear,
+Markku-Juhani O. Saarinen,
+Albert Ou,
+John Ousterhout,
+Daniel Page,
+David Patterson,
+Christopher Pulte,
+Jose Renau,
+Josh Scheid,
+Colin Schmidt,
+Peter Sewell,
+Susmit Sarkar,
+Ved Shanbhogue,
+Brent Spinney,
+Brendan Sweeney,
+Michael Taylor,
+Wesley Terpstra,
+Matt Thomas,
+Tommy Thorn,
+Philipp Tomsich,
+Caroline Trippel,
+Ray VanDeWalker,
+Muralidaran Vijayaraghavan,
+Megan Wachs,
+Paul Wamsley,
+Andrew Waterman,
+Robert Watson,
+David Weaver,
+Derek Williams,
+Claire Wolf,
+Andrew Wright,
+Reinoud Zandijk,
+and Sizhuo Zhang._
+
+_本文档根据知识共享署名 4.0 国际许可发布。_
+
+_本文档是“RISC-V 指令集手册，第一卷：用户级 ISA 2.1 版”的衍生作品，根据以下许可发布：©2010-2017 Andrew Waterman, Yunsup Lee, David Patterson, Krste Asanović。知识共享署名 4.0 国际许可。
+请引用为：“RISC-V 指令集手册，第一卷：用户级 ISA，文档版本 20191214-draft”，编辑 Andrew Waterman 和 Krste Asanović，RISC-V 基金会，2019 年 12 月。_
+
+//the colophon allows for a section after the preamble that is part of the frontmatter and therefore not assigned a page number.
+include::colophon.adoc[]
+
+include::intro.adoc[]
+include::rv32.adoc[]
+include::rv32e.adoc[]
+include::rv64.adoc[]
+include::zifencei.adoc[]
+include::zicsr.adoc[]
+include::counters.adoc[]
+include::zihintntl.adoc[]
+include::zihintpause.adoc[]
+include::zimop.adoc[]
+include::zicond.adoc[]
+include::m-st-ext.adoc[]
+include::a-st-ext.adoc[]
+include::zawrs.adoc[]
+include::zacas.adoc[]
+include::zabha.adoc[]
+include::rvwmo.adoc[]
+include::ztso-st-ext.adoc[]
+include::cmo.adoc[]
+include::f-st-ext.adoc[]
+include::d-st-ext.adoc[]
+include::q-st-ext.adoc[]
+include::zfh.adoc[]
+include::bfloat16.adoc[]
+include::zfa.adoc[]
+include::zfinx.adoc[]
+include::c-st-ext.adoc[]
+include::zc.adoc[]
+include::b-st-ext.adoc[]
+include::v-st-ext.adoc[]
+include::scalar-crypto.adoc[]
+include::vector-crypto.adoc[]
+include::unpriv-cfi.adoc[]
+include::zilsd.adoc[]
+include::rv-32-64g.adoc[]
+include::naming.adoc[]
+include::mm-eplan.adoc[]
+include::mm-formal.adoc[]
+//Appendices for Vector
+include::vector-examples.adoc[]
+include::calling-convention.adoc[]
+//include::fraclmul.adoc[]
+//End of Vector appendices
+include::index.adoc[]
+// this is generated generated from index markers.
+include::bibliography.adoc[]
+// this references the riscv-spec.bi file that has been copied into the resources directory

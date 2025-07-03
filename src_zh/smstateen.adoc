@@ -1,0 +1,88 @@
+[[smstateen]]
+== “Smstateen/Ssstateen”扩展，版本 1.0
+
+可选 RISC-V 扩展的实现有可能在单独的用户线程之间，或在 hypervisor 下运行的单独客户操作系统之间打开隐蔽通道。当扩展添加处理器状态（通常是显式寄存器，但也可能是其他形式的状态）时，问题就会出现，主操作系统或 hypervisor 不知道这些状态（因此不会进行上下文切换），但这些状态可以被一个用户线程或客户操作系统修改/写入，并被另一个用户线程或客户操作系统感知/检查/读取。
+
+例如，RISC-V 的高级中断架构 (AIA) 为 hart 添加了多达十个 supervisor 级 CSR（`siselect`、`sireg`、`stopi`、`sseteipnum`、`sclreipnum`、`sseteienum`、`sclreienum`、`sclaimei`、`sieh` 和 `siph`），并且还提供了硬件向旧的、非 AIA 软件向后兼容的选项。由于不了解 AIA 的旧 hypervisor 在上下文切换时不会交换 AIA 的任何新 CSR，因此这些寄存器可能被用作在运行在此 hypervisor 之上的多个客户操作系统之间的隐蔽通道。尽管传统做法可能认为这种通信通道无害，但当今对安全性的高度关注表明，应提供一种方法来堵塞此类通道。
+
+RISC-V 浮点扩展的 `f` 寄存器和向量扩展的 `v` 寄存器同样可能成为用户线程之间的隐蔽通道，除非 `sstatus` 寄存器中存在 FS 和 VS 字段。即使操作系统不了解（例如）向量扩展及其 `v` 寄存器，当 VS 字段初始化为零时，对这些寄存器的访问也会被阻止，无论是在机器级别还是由操作系统本身初始化 `sstatus`。
+
+显然，防止将新的用户级 CSR 用作隐蔽通道的一种方法是为每个相关扩展向 `mstatus` 或 `sstatus` 添加一个“XS”字段，与 V 扩展的 VS 字段并行。然而，由于未来可能添加少量状态的潜在扩展数量，这不被认为是解决该问题的通用解决方案。即使使用 64 位 `sstatus`（需要为 RV32 添加 `sstatush`），也不能确定 `sstatus` 中是否有足够的剩余位来容纳所有未来的用户级扩展。无论如何，没有必要为此目的而使 `sstatus` 紧张（并添加 `sstatush`）。堵塞隐蔽通道所需的“启用”标志通常不期望在用户线程的上下文切换时需要交换，这使得它们成为包含在 `sstatus` 中的不那么引人注目的候选者。
+因此，为它们提供了新的位置。
+
+=== 状态使能扩展
+
+Smstateen 和 Ssstateen 扩展共同指定了机器模式和 supervisor 模式功能。Smstateen 扩展规范包括 mstateen*、sstateen* 和 hstateen* CSR 及其功能。Ssstateen 扩展规范仅包括 sstateen* 和 hstateen* CSR 及其功能。
+
+对于 RV64 hart，此扩展在机器级别添加了四个新的 64 位 CSR：`mstateen0`（机器状态使能 0）、`mstateen1`、`mstateen2` 和 `mstateen3`。
+
+如果实现了 supervisor 模式，则在 supervisor 级别定义了另外四个 CSR：
+`sstateen0`、`sstateen1`、`sstateen2` 和 `sstateen3`。
+
+如果实现了 hypervisor 扩展，则添加了另一组 CSR：
+`hstateen0`、`hstateen1`、`hstateen2` 和 `hstateen3`。
+
+对于 RV32，存在用于访问相应机器级和 hypervisor CSR 的高 32 位的 CSR 地址：
+`mstateen0h`、`mstateen1h`、`mstateen2h`、`mstateen3h`、
+`hstateen0h`、`hstateen1h`、`hstateen2h` 和 `hstateen3h`。
+
+对于 supervisor 级 `sstateen` 寄存器，目前未添加高半部 CSR，因为预计这些寄存器的高 32 位将始终为零，如下文所述。
+
+`stateen` CSR 的每个位控制对扩展状态的较低特权访问，对于未被认为“值得”在 `sstatus` 中拥有完整 XS 字段（如 F 和 V 扩展的 FS 和 VS 字段）的扩展。每个级别提供的寄存器数量为四个，因为据信 4 * 64 = 256 位（用于机器和 hypervisor 级别）以及 4 * 32 = 128 位（用于 supervisor 级别）将足以满足未来许多年的需求，甚至可能与 RISC-V ISA 的使用寿命一样长。确切的数字四是试图在提供过少位和使用永远不会使用的 CSR 之间取得平衡。未来 `stateen` CSR 数量可能翻倍的情况将在后面讨论。
+
+每个级别的 `stateen` 寄存器控制对所有较低特权级别状态的访问，但不控制其自身级别的状态。这类似于现有 `counteren` CSR 控制对性能计数器寄存器的访问方式。与 `counteren` CSR 一样，当 `stateen` CSR 阻止较低特权级别访问状态时，在这些特权模式之一中尝试执行将读取或写入受保护状态的指令会引发非法指令异常，或者，如果在 VS 或 VU 模式下执行且适用于虚拟指令异常的情况，则会引发虚拟指令异常而不是非法指令异常。
+
+当未实现此扩展时，扩展添加的所有状态都可按该扩展的定义访问。
+
+当 `stateen` CSR 阻止特权模式访问状态时，在该特权模式下尝试执行 _隐式_ 更新状态而不读取它的指令可能会或可能不会引发非法指令或虚拟指令异常。此类情况必须通过明确指定来消除歧义。
+
+在某些情况下，`stateen` CSR 的位将具有双重目的，作为引入受控状态的 ISA 扩展的使能。
+
+supervisor 级 `sstateen` CSR 的每个位控制用户级访问（从 U 模式或 VU 模式）到扩展状态。目的是将 `sstateen` CSR 的位从最低有效端（位 0）开始分配，直到位 31，然后继续到下一个编号更高的 `sstateen` CSR。
+
+对于 `sstateen` CSR 中具有明确用途的每个位，在匹配的 `mstateen` CSR 中定义相同的位，以控制机器级别以下对相同状态的访问。`mstateen` CSR 的高 32 位（或对于 RV32，相应的高半部 CSR）控制对用户级别固有不可访问的状态的访问，因此 `supervisor` 级 `sstateen` CSR 中没有相应的使能位适用。目的是为此目的分配位，从最高有效端（位 63）开始，直到位 32，然后继续到下一个编号更高的 `mstateen` CSR。如果 `sstateen` CSR 的位分配速度足够慢，则允许 `mstateen` CSR 的最高有效端分配侵占低 32 位，然后才跳转到下一个编号更高的 `mstateen` CSR。在这种情况下，“侵占”位的位位置将永远在匹配的 `sstateen` CSR 中保持只读零。
+
+对于 hypervisor 扩展，`hstateen` CSR 具有与 `mstateen` CSR 相同的编码，只是控制对虚拟机（从 VS 和 VU 模式）的访问。
+
+`stateen` CSR 的每个标准定义位都是 WARL，并且可以是只读零或一，但受以下条件限制。
+
+`stateen` CSR 中定义为控制 hart 未实现状态的位对于该 hart 是只读零。同样，所有尚未赋予明确含义的保留位也是只读零。对于 `mstateen` CSR 中为零的每个位（无论是只读零还是设置为零），在匹配的 `hstateen` 和 `sstateen` CSR 中，相同的位显示为只读零。对于 `hstateen` CSR 中为零的每个位（无论是只读零还是设置为零），在 VS 模式下访问时，`sstateen` 中相同的位显示为只读零。
+
+supervisor 级 `sstateen` CSR 中的位不能是只读一，除非在匹配的 `mstateen` CSR 中以及（如果存在）在匹配的 `hstateen` CSR 中，相同的位是只读一。`hstateen` CSR 中的位不能是只读一，除非在匹配的 `mstateen` CSR 中，相同的位是只读一。
+
+复位时，所有可写的 `mstateen` 位都由硬件初始化为零。如果机器级软件更改这些值，它负责将 `hstateen` 和 `sstateen` CSR 中相应的可写位也初始化为零。每个特权级别的软件都应设置其各自的 `stateen` CSR，以指示它准备允许较低特权软件访问的状态。对于操作系统和 hypervisor，这通常意味着操作系统或 hypervisor 准备在上下文切换时交换的状态，或以其他方式管理的状态。
+
+对于 `sstateen` CSR，如果其访问由相应 `hstateen` CSR 的位 63 允许，则 hypervisor 必须将 `sstateen` CSR 包含在它为客户操作系统交换的上下文中。当它启动新的客户操作系统时，它必须确保这些 `sstateen` CSR 的可写位初始化为零，并且它必须模拟对任何其他 `sstateen` CSR 的访问。
+
+如果任何特权级别的软件不支持较低特权级别的多个上下文，则它可以通过将全一值写入其级别的 `stateen` CSR（机器级别的 `mstateen` CSR，操作系统的 `sstateen` CSR，以及 hypervisor 的 `hstateen` CSR）来最大化较低特权级别对所有状态的访问，而无需知道它正在授予访问的所有状态。这是合理的，因为当该级别只有一个上下文时，较低特权级别的执行上下文之间没有隐蔽通道的风险。这种情况预计在机器级别很常见，并且也可能发生，例如，对于仅托管单个客户虚拟机的类型 1 hypervisor。
+
+[NOTE]
+====
+如果预期有需求，`stateen` CSR 的集合将来可以通过添加以下内容翻倍：
+
+* `0x38C mstateen4`、`0x39C mstateen4h`
+
+* `0x38D mstateen5`、`0x39D mstateen5h`
+
+* `0x38E mstateen6`、`0x39E mstateen6h`
+
+* `0x38F mstateen7`、`0x39F mstateen7h`
+
+* `0x18C sstateen4`
+
+* `0x18D sstateen5`
+
+* `0x18E sstateen6`
+
+* `0x18F sstateen7`
+
+* `0x68C hstateen4`、`0x69C hstateen4h`
+
+* `0x68D hstateen5`、`0x69D hstateen5h`
+
+* `0x68E hstateen6`、`0x69E hstateen6h`
+
+* `0x68F hstateen7`、`0x69F hstateen7h`
+
+这些额外的 CSR 并非原始提案的明确部分，因为尚不清楚它们是否会需要，并且据信第一组（编号 0-3 的寄存器）的位消耗速度足够慢，任何迫在眉睫的短缺都将在许多年前被感知。目前，甚至不知道耗尽 `mstateen0`、`sstateen0` 和 `hstateen0` 需要多少年。
+====

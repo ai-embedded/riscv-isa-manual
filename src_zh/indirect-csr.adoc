@@ -1,0 +1,200 @@
+[[indirect-csr]]
+== “Smcsrind/Sscsrind”间接 CSR 访问，版本 1.0
+
+=== 引言
+
+Smcsrind/Sscsrind 是一个 ISA 扩展，它扩展了最初作为 https://github.com/riscv/riscv-aia[[.underline]#Smaia/Ssaia 扩展#] 定义的间接 CSR 访问机制，以便其他扩展可以使用它，而无需创建对 Smaia/Ssaia 的不必要依赖。
+
+此扩展具有两个优点：
+
+. 它提供了一种通过 CSR 访问寄存器数组的方法，而无需分配大量有限的 CSR 地址空间。
+
+. 它使软件能够通过索引访问寄存器数组中的每个寄存器，而无需为每个寄存器使用带有 case 的 switch 语句。
+
+[%unbreakable]
+[NOTE]
+====
+通过此扩展间接访问 CSR 使用选择值，与直接使用标准 CSR 编号访问不同。通过一种方法可访问的 CSR 可能通过另一种方法不可访问。选择值是与 CSR 编号和 Sdtrig 扩展中的 tselect 值不同的单独地址空间。如果 CSR 既可以直接访问又可以间接访问，则 CSR 的选择值与其 CSR 编号无关。
+
+此外，机器级和 Supervisor 级选择值是彼此独立的地址空间；但是，具有相同选择值的机器级和 Supervisor 级 CSR 可以由扩展定义为彼此的部分或完全别名。这通常用于可以从机器级委托给 Supervisor 级的 CSR。
+====
+
+机器级扩展 *Smcsrind* 涵盖了所有添加的 CSR 和 hart 的所有行为修改，涵盖所有特权级别。对于 Supervisor 级环境，扩展 *Sscsrind* 本质上与 Smcsrind 相同，只是排除了机器级 CSR 和 Supervisor 级不可直接见的行为。
+
+[[body]]
+=== 机器级 CSR
+
+[width="100%",cols="15%,12%,12%,15%,46%",options="header",]
+|===
+|*编号* |*特权* |*宽度* |*名称* |*描述*
+|0x350 |MRW |XLEN |`miselect` |机器间接寄存器选择
+|0x351 |MRW |XLEN |`mireg` |机器间接寄存器别名
+|0x352 |MRW |XLEN |`mireg2` |机器间接寄存器别名 2
+|0x353 |MRW |XLEN |`mireg3` |机器间接寄存器别名 3
+|0x355 |MRW |XLEN |`mireg4` |机器间接寄存器别名 4
+|0x356 |MRW |XLEN |`mireg5` |机器间接寄存器别名 5
+|0x357 |MRW |XLEN |`mireg6` |机器间接寄存器别名 6
+|===
+
+[%unbreakable]
+[NOTE]
+====
+`mireg*` CSR 编号不连续，因为 miph 是 CSR 编号 0x354。
+====
+
+上表中列出的 CSR 提供了一个窗口，用于间接访问寄存器状态。`miselect` 的值决定了在读取或写入每个机器间接别名 CSR (`mireg*`) 时访问哪个寄存器。`miselect` 值范围分配给依赖扩展，这些扩展指定了通过每个 `mireg__i__` 寄存器可访问的寄存器状态，对于每个 `miselect` 值。`miselect` 是一个 WARL 寄存器。
+
+`miselect` 寄存器至少实现足够的位以支持所有已实现的 `miselect` 值（对应于利用 `miselect`/`mireg*` 间接访问寄存器状态的已实现扩展）。如果没有实现利用它的扩展，`miselect` 寄存器可以是只读零。
+
+`miselect` 的值中最高有效位设置（位 XLEN - 1 = 1）仅指定用于自定义用途，大概是通过别名 CSR 访问自定义寄存器。`miselect` 的值中最高有效位清除仅指定用于标准用途，并在分配给标准架构扩展之前保留。如果 XLEN 更改，`miselect` 的最高有效位将移动到新位置，保留其以前的值。
+
+[%unbreakable]
+[NOTE]
+====
+不要求实现支持 `miselect` 的任何自定义值。
+====
+
+当 `miselect` 包含未实现的值时，从 M 模式访问 `mireg*` 的行为是未指定的。
+
+[%unbreakable]
+[NOTE]
+====
+预计实现通常会为此类访问引发非法指令异常，以便例如可以将它们识别为软件错误。平台规范、配置文件规范和/或特权 ISA 规范可能会对此类访问的行为施加更多限制。
+====
+
+当 `miselect` 包含已分配和已实现范围内的数字时，访问 `mireg*` 的尝试会导致特定行为，对于 `miselect` 和 `mireg__i__` 的每个组合，该行为由分配给 `miselect` 值的扩展定义。
+
+[%unbreakable]
+[NOTE]
+====
+通常，每个 `mireg`*_i_* 将访问寄存器状态、访问只读 0 状态或引发非法指令异常。
+
+对于 RV32，如果扩展将间接访问的寄存器定义为 64 位宽，建议通过 `mireg`、`mireg2` 或 `mireg3` 访问寄存器的低 32 位，而通过 `mireg4`、`mireg5` 或 `mireg6` 访问高 32 位。
+====
+
+[%unbreakable]
+[NOTE]
+====
+定义了六个 `\*ireg*` 寄存器，以确保涵盖开发中扩展的需求，并留有增长空间。例如，对于与计数器 X 关联的 `siselect` 值，`sireg`/`sireg2` 可用于访问 `mhpmcounterX`/`mhpmeventX`，而 `sireg4`/`sireg5` 可用于访问 `mhpmcounterXh`/`mhpmeventXh`。六个 `\*ireg*` 寄存器允许每个索引（`*iselect`）访问多达 3 个 CSR 数组，其中包含仅 RV32 的 CSR，或者每个索引值访问多达 6 个 CSR 数组，不包含仅 RV32 的 CSR。
+====
+
+=== Supervisor 级 CSR
+
+[width="100%",cols="15%,12%,12%,15%,46%",options="header",]
+|===
+|*编号* |*特权* |*宽度* |*名称* |*描述*
+|0x150 |SRW |XLEN |`siselect` |Supervisor 间接寄存器选择
+|0x151 |SRW |XLEN |`sireg` |Supervisor 间接寄存器别名
+|0x152 |SRW |XLEN |`sireg2` |Supervisor 间接寄存器别名 2
+|0x153 |SRW |XLEN |`sireg3` |Supervisor 间接寄存器别名 3
+|0x155 |SRW |XLEN |`sireg4` |Supervisor 间接寄存器别名 4
+|0x156 |SRW |XLEN |`sireg5` |Supervisor 间接寄存器别名 5
+|0x157 |SRW |XLEN |`sireg6` |Supervisor 间接寄存器别名 6
+|===
+
+如果实现了 S 模式，则需要上表中的 CSR。
+
+`siselect` 寄存器将至少支持 0..0xFFF 的值范围。未来的扩展可能会定义超出此最小范围的值范围。只有在实现此类扩展时，才要求 `siselect` 支持更大的值。
+
+[%unbreakable]
+[NOTE]
+====
+要求 `siselect` 的范围为 0–0xFFF，即使大部分或全部空间可能保留或不可访问，也允许 M 模式在此已实现范围内模拟间接访问的寄存器，包括将来可能标准化的寄存器。
+====
+
+`siselect` 的值中最高有效位设置（位 XLEN - 1 = 1）仅指定用于自定义用途，大概是通过别名 CSR 访问自定义寄存器。`siselect` 的值中最高有效位清除仅指定用于标准用途，并在分配给标准架构扩展之前保留。如果 XLEN 更改，`siselect` 的最高有效位将移动到新位置，保留其以前的值。
+
+当 `siselect` 包含 Supervisor 级别未实现的值时，从 M 模式或 S 模式访问 `sireg*` 的行为是未指定的。
+
+[%unbreakable]
+[NOTE]
+====
+建议实现为此类访问引发非法指令异常，以方便可能模拟（通过 M 模式）这些访问。
+====
+
+[%unbreakable]
+[NOTE]
+====
+如果机器级别已禁用 S 模式的扩展，例如通过 CSR `menvcfg` 中某些字段的设置，则扩展被视为未在 Supervisor 级别实现。
+====
+
+否则，当 `siselect` 包含标准定义和已实现范围内的数字时，从 M 模式或 S 模式访问 `sireg*` 的尝试会导致特定行为，对于 `siselect` 和 `sireg__i__` 的每个组合，该行为由分配给 `siselect` 值的扩展定义。
+
+[%unbreakable]
+[NOTE]
+====
+通常，每个 `sireg`*_i_* 将访问寄存器状态、访问只读 0 状态，或者（除非在虚拟机中执行，这将在下一节中介绍）引发非法指令异常。
+====
+
+请注意，`siselect` 和 `sireg*` 的宽度始终是当前 XLEN 而不是 SXLEN。因此，例如，如果 MXLEN = 64 且 SXLEN = 32，则当当前特权模式为 M（运行 RV64 代码）时，这些寄存器为 64 位，但当特权模式为 S（RV32 代码）时，这些寄存器为 32 位。
+
+=== 虚拟 Supervisor 级 CSR
+
+[width="100%",cols="15%,12%,12%,15%,46%",options="header",]
+|===
+|*编号* |*特权* |*宽度* |*名称* |*描述*
+|0x250 |HRW |XLEN |`vsiselect` |虚拟 Supervisor 间接寄存器选择
+
+|0x251 |HRW |XLEN |`vsireg` |虚拟 Supervisor 间接寄存器别名
+
+|0x252 |HRW |XLEN |`vsireg2` |虚拟 Supervisor 间接寄存器别名 2
+
+|0x253 |HRW |XLEN |`vsireg3` |虚拟 Supervisor 间接寄存器别名 3
+
+|0x255 |HRW |XLEN |`vsireg4` |虚拟 Supervisor 间接寄存器别名 4
+
+|0x256 |HRW |XLEN |`vsireg5` |虚拟 Supervisor 间接寄存器别名 5
+
+|0x257 |HRW |XLEN |`vsireg6` |虚拟 Supervisor 间接寄存器别名 6
+|===
+
+如果实现了管理程序扩展，则需要上表中的 CSR。这些 VS CSR 都与 Supervisor CSR 匹配，并在虚拟机中执行时（在 VS 模式或 VU 模式下）替代这些 Supervisor CSR。
+
+`vsiselect` 寄存器将至少支持 0..0xFFF 的值范围。未来的扩展可能会定义超出此最小范围的值范围。只有在实现此类扩展时，才要求 `vsiselect` 支持更大的值。
+
+[%unbreakable]
+[NOTE]
+====
+要求 `vsiselect` 的范围为 0–0xFFF，即使大部分或全部空间可能保留或不可访问，也允许管理程序在此已实现范围内模拟间接访问的寄存器，包括将来可能标准化的寄存器。
+
+更普遍地，建议 `vsiselect` 和 `siselect` 实现相同的位数。这也可以避免由于 `vsiselect` 和 `siselect` 宽度之间的可观察差异而创建虚拟化漏洞。
+====
+
+`vsiselect` 的值中最高有效位设置（位 XLEN - 1 = 1）仅指定用于自定义用途，大概是通过别名 CSR 访问自定义寄存器。`vsiselect` 的值中最高有效位清除仅指定用于标准用途，并在分配给标准架构扩展之前保留。如果 XLEN 更改，`vsiselect` 的最高有效位将移动到新位置，保留其以前的值。
+
+对于别名 CSR `sireg*` 和 `vsireg*`，管理程序扩展的通常规则（基于指令是否符合 HS 条件）不适用于何时引发虚拟指令异常。本节中给出的 `sireg` 和 `vsireg` 的规则适用，除非被以下部分中指定的优先于本节的要求覆盖，当也实现了 Smstateen 扩展时。
+
+当从 VS 模式或 VU 模式尝试直接访问 `vsiselect` 或 `vsireg*`，或从 VU 模式尝试访问 `siselect` 或 `sireg*` 时，会引发虚拟指令异常。
+
+当 `vsiselect` 包含 HS 级别未实现的值时，从 M 模式或 HS 模式访问 `vsireg*`，或从 VS 模式访问 `sireg*`（实际上是 `vsireg*`）的行为是未指定的。
+
+[%unbreakable]
+[NOTE]
+====
+建议实现为此类访问引发非法指令异常，以方便可能模拟（通过 M 模式）这些访问。
+====
+
+否则，当 `vsiselect` 包含标准定义和已实现范围内的数字时，从足够特权模式访问 `vsireg*`，或从 VS 模式访问 `sireg*`（实际上是 `vsireg*`）的尝试会导致特定行为，对于 `vsiselect` 和 `vsireg__i__` 的每个组合，该行为由分配给 `vsiselect` 值的扩展定义。
+
+[%unbreakable]
+[NOTE]
+====
+通常，每个 `vsireg`*_i_* 将访问寄存器状态、访问只读 0 状态，或者引发异常（非法指令异常，或者对于来自 VS 模式的某些选择访问，虚拟指令异常）。当 `vsiselect` 包含 HS 级别已实现但 VS 级别未实现的值时，从 VS 模式访问 `sireg*`（实际上是 `vsireg*`）的尝试通常会引发虚拟指令异常。但对于特定于扩展的情况，不同的行为可能更合适。
+====
+
+与 `siselect` 和 `sireg*` 类似，`vsiselect` 和 `vsireg*` 的宽度始终是当前 XLEN 而不是 VSXLEN。因此，例如，如果 HSXLEN = 64 且 VSXLEN = 32，则当管理程序在 HS 模式下访问时（运行 RV64 代码），这些寄存器为 64 位，但当客户操作系统在 VS 模式下访问时（RV32 代码），这些寄存器为 32 位。
+
+=== 通过状态使能 CSR 进行访问控制
+
+如果 Smstateen 扩展与 Smcsrind 一起实现，则状态使能寄存器 `mstateen0` 的位 60 控制对 `siselect`、`sireg*`、`vsiselect` 和 `vsireg*` 的访问。当 `mstateen0`[60]=0 时，从特权低于 M 模式的特权模式尝试访问这些 CSR 之一会导致非法指令异常。与往常一样，状态使能 CSR 不影响 M 模式下任何状态的可访问性，仅影响特权较低的模式。有关更多解释，请参阅扩展 https://github.com/riscv/riscv-state-enable/releases/download/v1.0.0/Smstateen.pdf[[.underline]#Smstateen#] 的文档。
+
+其他扩展可以指定某些 mstateen 位控制通过 `siselect` + `sireg*` 和/或 `vsiselect` + `vsireg*` 间接访问的寄存器。但是，无论任何其他 mstateen 位如何，如果 `mstateen0`[60] = 1，则会引发虚拟指令异常，如上一节所述，对于所有从 VS 模式或 VU 模式尝试直接访问 `vsiselect` 或 `vsireg*`，以及所有从 VU 模式尝试访问 `siselect` 或 `sireg*`。
+
+如果实现了管理程序扩展，则在管理程序 CSR `hstateen0` 中也定义了相同的位，但仅控制对 `siselect` 和 `sireg*`（实际上是 `vsiselect` 和 `vsireg*`）的访问，这是在 VS 或 VU 模式下执行的虚拟机可能访问的状态。当 `hstateen0`[60]=0 且 `mstateen0`[60]=1 时，所有从 VS 或 VU 模式尝试访问 `siselect` 或 `sireg*` 都会引发虚拟指令异常，而不是非法指令异常，无论 `vsiselect` 或任何其他 mstateen 位的值如何。
+
+Ssstateen 扩展被定义为 Smstateen 的 Supervisor 级视图。因此，Sscsrind 和 Ssstateen 的组合包含了上面为 `hstateen0` 定义的位，但不包含为 `mstateen0` 定义的位，因为机器级 CSR 对 Supervisor 级不可见。
+
+[NOTE]
+====
+CSR 地址空间保留用于未来可能的“Sucsrind”扩展，该扩展将间接 CSR 访问扩展到用户模式。
+====

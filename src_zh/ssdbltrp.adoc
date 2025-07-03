@@ -1,0 +1,8 @@
+[[ssdbltrp]]
+== “Ssdbltrp”双重陷阱扩展，版本 1.0
+
+Ssdbltrp 扩展解决了低于 M 模式的特权模式下的双重陷阱（参见 <<machine-double-trap>>）。它使 HS 模式能够在 VS 模式下发生双重陷阱时调用虚拟机中的关键错误处理程序。它还允许 M 模式在 S/HS 模式下发生双重陷阱时调用操作系统/管理程序中的关键错误处理程序。
+
+Ssdbltrp 扩展添加了 `menvcfg`.DTE（参见 <<sec:menvcfg>>）和 `sstatus`.SDT 字段（参见 <<sstatus>>）。如果还实现了 hypervisor 扩展，则该扩展会添加 `henvcfg`.DTE（参见 <<sec:henvcfg>>）和 `vsstatus`.SDT 字段（参见 <<vsstatus>>）。
+
+有关操作细节，请参见 <<supv-double-trap>>。

@@ -1,0 +1,95 @@
+== “Zfh”和“Zfhmin”半精度浮点扩展，版本 1.0
+
+本章描述了 Zfh 标准扩展，用于符合 IEEE 754-2008 算术标准的 16 位半精度二进制浮点指令。Zfh 扩展依赖于单精度浮点扩展 F。<<nanboxing>> 中描述的 NaN-boxing 方案被扩展，以允许将半精度值 NaN-box 到单精度值内（当存在 D 或 Q 扩展时，可以递归地将其 NaN-box 到双精度或四精度值内）。
+
+[NOTE]
+====
+该扩展主要提供消耗半精度操作数并产生半精度结果的指令。然而，使用更高的中间精度对半精度数据进行计算也很常见。尽管该扩展提供了足以实现该模式的显式转换指令，但未来的扩展可能会通过隐式加宽其操作数的附加指令（例如，半精度×半精度+单精度→单精度）或隐式缩小其结果（例如，半精度+单精度→半精度）来进一步加速此类计算。
+====
+=== 半精度加载和存储指令
+
+添加了 LOAD-FP 和 STORE-FP 指令的新的 16 位变体，使用 funct3 宽度字段的新值进行编码。
+
+include::images/wavedrom/sp-load-store.edn[]
+[[sp-load-store]]
+//.半精度加载和存储指令
+
+只有当有效地址自然对齐时，才能保证 FLH 和 FSH 原子执行。
+
+FLH 和 FSH 不会修改正在传输的位；特别是，保留了非规范 NaN 的有效载荷。FLH 对写入 _rd_ 的结果进行 NaN-boxing，而 FSH 则忽略 _rs2_ 中除低 16 位之外的所有位。
+
+=== 半精度计算指令
+
+大多数指令的格式字段中都添加了一个新的支持格式，如 <<tab:fpextfmth>> 所示。
+
+[[tab:fpextfmth]]
+.格式字段编码。
+[%autowidth,float="center",align="center",cols="^,^,<",options="header",]
+|===
+|_fmt_ 字段 |助记符 |含义
+|00 |S |32 位单精度
+|01 |D |64 位双精度
+|10 |H |16 位半精度
+|11 |Q |128 位四精度
+|===
+
+半精度浮点计算指令的定义与其单精度对应指令类似，但操作于半精度操作数并产生半精度结果。
+
+include::images/wavedrom/spfloat-zfh.edn[]
+
+include::images/wavedrom/spfloat2-zfh.edn[]
+
+=== 半精度转换和移动指令
+
+添加了新的浮点到整数和整数到浮点转换指令。这些指令的定义与单精度到整数和整数到单精度转换指令类似。FCVT.W.H 或 FCVT.L.H 分别将半精度浮点数转换为有符号 32 位或 64 位整数。FCVT.H.W 或 FCVT.H.L 分别将 32 位或 64 位有符号整数转换为半精度浮点数。FCVT.WU.H、FCVT.LU.H、FCVT.H.WU 和 FCVT.H.LU 变体用于与无符号整数值之间的转换。FCVT.L[U].H 和 FCVT.H.L[U] 是仅限 RV64 的指令。
+
+include::images/wavedrom/half-prec-conv-and-mv.edn[]
+[[half-prec-conv-and-mv]]
+
+添加了新的浮点到浮点转换指令。这些指令的定义与双精度浮点到浮点转换指令类似。FCVT.S.H 或 FCVT.H.S 分别将半精度浮点数转换为单精度浮点数，反之亦然。如果存在 D 扩展，FCVT.D.H 或 FCVT.H.D 分别将半精度浮点数转换为双精度浮点数，反之亦然。如果存在 Q 扩展，FCVT.Q.H 或 FCVT.H.Q 分别将半精度浮点数转换为四精度浮点数，反之亦然。
+
+include::images/wavedrom/half-prec-flpt-to-flpt-conv.edn[]
+[[half-prec-flpt-to-flpt-conv]]
+
+浮点到浮点符号注入指令 FSGNJ.H、FSGNJN.H 和 FSGNJX.H 的定义与单精度符号注入指令类似。
+
+include::images/wavedrom/flt-to-flt-sgn-inj-instr.edn[]
+[[flt-to-flt-sgn-inj-instr]]
+
+提供了在浮点和整数寄存器之间移动位模式的指令。FMV.X.H 将浮点寄存器 _rs1_ 中的半精度值移动到整数寄存器 _rd_ 中，采用 IEEE 754-2008 标准编码表示，并用浮点数符号位的副本填充高 XLEN-16 位。
+
+FMV.H.X 将以 IEEE 754-2008 标准编码的半精度值从整数寄存器 _rs1_ 的低 16 位移动到浮点寄存器 _rd_，并对结果进行 NaN-boxing。
+
+FMV.X.H 和 FMV.H.X 不会修改正在传输的位；特别是，保留了非规范 NaN 的有效载荷。
+
+include::images/wavedrom/flt-pt-to-int-move.edn[]
+[[flt-pt-to-int-move]]
+
+=== 半精度浮点比较指令
+
+半精度浮点比较指令的定义与其单精度对应指令类似，但操作于半精度操作数。
+
+include::images/wavedrom/half-pr-flt-pt-compare.edn[]
+[[half-pr-flt-pt-compare]]
+
+=== 半精度浮点分类指令
+
+半精度浮点分类指令 FCLASS.H 的定义与其单精度对应指令类似，但操作于半精度操作数。
+
+include::images/wavedrom/half-pr-flt-pt-class.edn[]
+[[half-pr-flt-class]]
+
+=== “Zfhmin”最小半精度浮点标准扩展
+
+本节描述了 Zfhmin 标准扩展，它为 16 位半精度二进制浮点指令提供了最小支持。Zfhmin 扩展是 Zfh 扩展的子集，仅包含数据传输和转换指令。与 Zfh 一样，Zfhmin 扩展依赖于单精度浮点扩展 F。期望 Zfhmin 软件主要使用半精度格式进行存储，并以更高的精度执行大多数计算。
+
+Zfhmin 扩展包括 Zfh 扩展中的以下指令：FLH、FSH、FMV.X.H、FMV.H.X、FCVT.S.H 和 FCVT.H.S。如果存在 D 扩展，则还包括 FCVT.D.H 和 FCVT.H.D 指令。如果存在 Q 扩展，则还包括 FCVT.Q.H 和 FCVT.H.Q 指令。
+
+[NOTE]
+====
+Zfhmin 不包括 FSGNJ.H 指令，因为使用 FSGNJ.S 指令在浮点寄存器之间移动半精度值就足够了。
+
+通过将半精度操作数转换为单精度，使用单精度算术执行操作，然后转换回半精度，可以忠实地模拟半精度加法、减法、乘法、除法和平方根运算。cite:[roux:hal-01091186] 对于 RNE 和 RMM 舍入模式，使用此方法执行半精度融合乘加运算会在某些输入上产生 1-ulp 误差。
+
+从 8 位或 16 位整数到半精度的转换可以通过首先转换为单精度，然后转换为半精度来模拟。从 32 位整数的转换可以通过首先转换为双精度来模拟。如果不存在 D 扩展并且在 RNE 或 RMM 下的 1-ulp 误差是可容忍的，则可以首先将 32 位整数转换为单精度。同样的说明也适用于在没有 Q 扩展的情况下从 64 位整数的转换。
+====

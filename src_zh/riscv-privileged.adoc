@@ -1,0 +1,86 @@
+[[manual:priv,RISC-V ISA 手册第二卷：特权架构]]
+= RISC-V 指令集手册：第二卷：特权架构
+include::../docs-resources/global-config.adoc[]
+:description: 第二卷 - 特权架构
+:revnumber: 20250508
+:revremark: 本文档处于已批准状态。
+//development: 假设一切都可能改变
+//stable: 假设一切都可能改变
+//frozen: 如果你实现此版本，你将承担因公开审查周期而可能发生变化的风险，但我们预计变化很小或没有变化。
+//ratified: 你可以实现此版本，并确信不会有任何变化。如果由于勘误或增强需要更改，它将以新扩展的形式发布。我们不修订扩展。
+:colophon:
+:preface-title: 序言
+:appendix-caption: 附录
+:imagesdir: ../docs-resources/images
+:title-logo-image: image:risc-v_logo.png["RISC-V International Logo",pdfwidth=3.25in,align=center]
+//:page-background-image: image:draft.png[opacity=20%]
+//:title-page-background-image: none
+//:back-cover-image: image:backpage.png[opacity=25%]
+// Settings:
+:experimental:
+:reproducible:
+:imagesoutdir: {docdir}/../build/images-out
+:bibtex-file: resources/riscv-spec.bib
+:bibtex-order: alphabetical
+:bibtex-style: apa
+:bibtex-format: asciidoc
+:bibtex-throw: false
+:icons: font
+:lang: en
+:example-caption: 示例
+:listing-caption: 列表
+:sectnums:
+:sectnumlevels: 5
+:toc: left
+:toclevels: 4
+:source-highlighter: pygments
+ifdef::backend-pdf[]
+:source-highlighter: rouge
+endif::[]
+:table-caption: 表
+:figure-caption: 图
+:xrefstyle: short
+:chapter-refsig: 章
+:section-refsig: 节
+:appendix-refsig: 附录
+// Uncomment :data-uri: if your eBook reader is not capable of rendering
+// embedded images. One known affected device is PocketBook InkPad 3.
+:data-uri:
+:hide-uri-scheme:
+:stem: latexmath
+:footnote:
+:le: &#8804;
+:ge: &#8805;
+:ne: &#8800;
+:approx: &#8776;
+:inf: &#8734;
+:imagesdir: images
+
+_所有版本规范的贡献者按字母顺序排列（请联系编辑以建议更正）：Krste Asanović, Peter Ashenden, Rimas Avižienis, Jacob Bachmeyer, Allen J. Baum, Jonathan Behrens, Paolo Bonzini, Ruslan Bukin, Christopher Celio, Chuanhua Chang, David Chisnall, Anthony Coulter, Palmer Dabbelt, Monte Dalrymple, Paul Donahue, Greg Favor, Dennis Ferguson, Marc Gauthier, Andy Glew, Gary Guo, Mike Frysinger, John Hauser, David Horner, Olof Johansson, David Kruckemyer, Yunsup Lee, Daniel Lustig, Andrew Lutomirski, Martin Maas, Prashanth Mundkur, Jonathan Neuschäfer, Rishiyur Nikhil, Stefan O'Rear, Albert Ou, John Ousterhout, David Patterson, Dmitri Pavlov, Kade Phillips, Josh Scheid, Colin Schmidt, Michael Taylor, Wesley Terpstra, Matt Thomas, Tommy Thorn, Ray VanDeWalker, Megan Wachs, Steve Wallach, Andrew Waterman, Claire Wolf, Adam Zabrocki, and Reinoud Zandijk.._
+
+_本文档根据知识共享署名 4.0 国际许可发布。_
+
+_本文档是 RISC-V 特权规范 1.9.1 版本的衍生作品，根据以下许可发布：©2010-2017 Andrew Waterman, Yunsup Lee, Rimas Avižienis, David Patterson, Krste Asanović。知识共享署名 4.0 国际许可。_
+
+include::priv-preface.adoc[]
+include::priv-intro.adoc[]
+include::priv-csrs.adoc[]
+include::machine.adoc[]
+include::smstateen.adoc[]
+include::indirect-csr.adoc[]
+include::smepmp.adoc[]
+include::smcntrpmf.adoc[]
+include::rnmi.adoc[]
+include::smcdeleg.adoc[]
+include::smdbltrp.adoc[]
+include::smctr.adoc[]
+include::supervisor.adoc[]
+include::sstc.adoc[]
+include::sscofpmf.adoc[]
+include::hypervisor.adoc[]
+include::priv-cfi.adoc[]
+include::ssdbltrp.adoc[]
+include::zpm.adoc[]
+include::priv-insns.adoc[]
+include::priv-history.adoc[]
+include::bibliography.adoc[]

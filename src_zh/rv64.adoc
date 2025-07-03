@@ -1,0 +1,192 @@
+[[rv64]]
+== RV64I 基本整数指令集，版本 2.1
+
+本章描述了 RV64I 基本整数指令集，它建立在 <<rv32>> 中描述的 RV32I 变体之上。
+本章仅介绍与 RV32I 的差异，因此应与前一章结合阅读。
+
+=== 寄存器状态
+
+RV64I 将整数寄存器和支持的用户地址空间扩展到 64 位（<<gprs>> 中 XLEN=64）。
+
+=== 整数计算指令
+
+大多数整数计算指令对 XLEN 位值进行操作。RV64I 中提供了额外的指令变体来操作 32 位值，通过操作码的“W”后缀表示。这些“*W”指令忽略其输入的最高 32 位，并始终生成 32 位有符号值，将其符号扩展到 64 位，即 XLEN-1 到 31 位相等。
+
+[NOTE]
+====
+编译器和调用约定保持不变，即所有 32 位值都以符号扩展格式保存在 64 位寄存器中。即使是 32 位无符号整数，也会将位 31 扩展到位 63 到 32。因此，32 位无符号整数和有符号整数之间的转换是空操作，有符号 32 位整数到有符号 64 位整数的转换也是空操作。现有的 64 位宽 SLTU 和无符号分支比较在此不变式下仍然可以正确操作 32 位无符号整数。同样，对 32 位符号扩展整数的现有 64 位宽逻辑操作保留了符号扩展属性。加法和移位需要一些新指令（ADD[I]W/SUBW/SxxW）以确保 32 位值的合理性能。
+====
+(((RV64I，移位)))
+(((RV64I，比较)))
+
+==== 整数寄存器-立即数指令
+
+include::images/wavedrom/rv64i-base-int.edn[]
+[[rv64i-base-int]]
+//.RV64I 寄存器-立即数指令
+
+ADDIW 是 RV64I 指令，它将符号扩展的 12 位立即数添加到寄存器 _rs1_，并在 _rd_ 中生成 32 位结果的正确符号扩展。溢出被忽略，结果是结果的低 32 位符号扩展到 64 位。注意，ADDIW _rd, rs1, 0_ 将寄存器 _rs1_ 的低 32 位的符号扩展写入寄存器 _rd_（汇编器伪指令 SEXT.W）。
+
+include::images/wavedrom/rv64i-slli.edn[]
+[[rv64i-slli]]
+//.RV64I 寄存器-立即数（描述 ADDIW）指令
+
+常量移位编码为 I 型格式的特化，使用与 RV32I 相同的指令操作码。要移位的操作数在 _rs1_ 中，移位量在 RV64I 的 I 立即数字段的低 6 位中编码。右移类型编码在第 30 位。SLLI 是逻辑左移（零移入低位）；SRLI 是逻辑右移（零移入高位）；SRAI 是算术右移（原始符号位复制到空出的高位）。
+(((RV64I，SLLI)))
+(((RV64I，SRKIW)))
+(((RV64I，SRLIW)))
+(((RV64I，仅 RV64I)))
+
+include::images/wavedrom/rv64i-slliw.edn[]
+[[rv64i-slliw]]
+
+SLLIW、SRLIW 和 SRAIW 是仅 RV64I 指令，其定义类似，但对 32 位值进行操作，并将其 32 位结果符号扩展到 64 位。SLLIW、SRLIW 和 SRAIW 编码中 _imm[5] ≠ 0_ 的情况是保留的。
+
+[NOTE]
+====
+以前，SLLIW、SRLIW 和 SRAIW 中 _imm[5] ≠ 0_ 的情况被定义为导致非法指令异常，而现在它们被标记为保留。这是一个向后兼容的更改。
+====
+
+include::images/wavedrom/rv64-lui-auipc.edn[]
+[[rv64_lui-auipc]]
+//.RV64I 寄存器-立即数（描述）指令
+
+LUI（加载高位立即数）使用与 RV32I 相同的操作码。LUI 将 32 位 U 立即数放入寄存器 _rd_，将最低 12 位填充为零。32 位结果符号扩展到 64 位。
+(((RV64I，LUI)))
+
+AUIPC（将高位立即数添加到 `pc`）使用与 RV32I 相同的操作码。AUIPC 用于构建 `pc` 相对地址，并使用 U 型格式。AUIPC 从 U 立即数形成 32 位偏移量，将最低 12 位填充为零，将结果符号扩展到 64 位，将其添加到 AUIPC 指令的地址，然后将结果放入寄存器 _rd_。
+
+[NOTE]
+====
+请注意，在 RV64I 中，通过将 LUI 与 LD、AUIPC 与 JALR 等配对可以形成的地址偏移量集是 [latexmath:[${-}2^{31}{-}2^{11}$], latexmath:[$2^{31}{-}2^{11}{-}1$]]。
+====
+
+==== 整数寄存器-寄存器操作
+
+//此图不符合 tex 规范
+include::images/wavedrom/rv64i-int-reg-reg.edn[]
+[[int_reg-reg]]
+//.RV64I 整数寄存器-寄存器指令
+
+ADDW 和 SUBW 是仅 RV64I 指令，其定义类似于 ADD 和 SUB，但对 32 位值进行操作并生成有符号 32 位结果。溢出被忽略，结果的低 32 位符号扩展到 64 位并写入目标寄存器。
+(((仅 RV64I，ADDW)))
+(((仅 RV64I，SUBW)))
+
+SLL、SRL 和 SRA 对寄存器 _rs1_ 中的值执行逻辑左移、逻辑右移和算术右移，移位量在寄存器 _rs2_ 的低 6 位中。
+
+SLLW、SRLW 和 SRAW 是仅 RV64I 指令，其定义类似，但对 32 位值进行操作，并将其 32 位结果符号扩展到 64 位。移位量由 _rs2[4:0]_ 给出。
+(((仅 RV64I，SLLW)))
+(((仅 RV64I，SRLW)))
+(((仅 RV64I，SRAW)))
+
+=== 加载和存储指令
+
+RV64I 将地址空间扩展到 64 位。执行环境将定义地址空间的哪些部分可以合法访问。
+
+include::images/wavedrom/load-store.edn[]
+[[load_store]]
+//.加载和存储指令
+
+LD 指令将 64 位值从内存加载到 RV64I 的寄存器 _rd_ 中。
+(((RV64I，LD)))
+
+LW 指令将 32 位值从内存加载并符号扩展到 64 位，然后存储到 RV64I 的寄存器 _rd_ 中。LWU 指令则将 32 位值从内存零扩展到 64 位，用于 RV64I。LH 和 LHU 对 16 位值进行类似定义，LB 和 LBU 对 8 位值进行类似定义。SD、SW、SH 和 SB 指令分别将寄存器 _rs2_ 的低位中的 64 位、32 位、16 位和 8 位值存储到内存中。
+
+[[rv64i-hints]]
+=== HINT 指令
+
+RV32I 中所有微架构 HINT 指令（参见 <<rv32>>）在 RV64I 中也是 HINT。
+RV64I 中新增的计算指令扩展了标准和自定义 HINT 编码空间。
+(((RV64I，HINT)))
+
+<<rv64i-h>> 列出了所有 RV64I HINT 代码点。91% 的 HINT 空间保留用于标准 HINT，但目前没有定义。HINT 空间的其余部分指定用于自定义 HINT；在此子空间中永远不会定义标准 HINT。
+
+[[rv64i-h]]
+.RV64I HINT 指令。
+[float="center",align="center",cols="<,<,^,<", options="header", grid="all"]
+|===
+|指令 |约束 |代码点 |目的
+|LUI |_rd_=_x0_ |latexmath:[$2^{20}$] .9+.^|_指定用于未来的标准用途_
+
+|AUIPC |_rd_=_x0_ |latexmath:[$2^{20}$]
+
+|ADDI |_rd_=_x0_，且 _rs1_≠_x0_ 或 _imm_≠0 |latexmath:[$2^{17}-1$]
+
+|ANDI |_rd_=_x0_ |latexmath:[$2^{17}$]
+
+|ORI |_rd_=_x0_ |latexmath:[$2^{17}$]
+
+|XORI |_rd_=_x0_ |latexmath:[$2^{17}$]
+
+|ADDIW |_rd_=_x0_ |latexmath:[$2^{17}$]
+
+|ADD |_rd_=_x0_，_rs1_≠_x0_ |latexmath:[$2^{10}-32$]
+
+|ADD |_rd_=_x0_，_rs1_=_x0_，_rs2_≠_x2_-_x5_| 28
+
+|ADD |_rd_=_x0_，_rs1_=_x0_，_rs2_=_x2_-_x5_| 4 | （_rs2_=_x2_）NTL.P1 +
+ （_rs2_=_x3_）NTL.PALL +
+ （_rs2_=_x4_）NTL.S1 +
+ （_rs2_=_x5_）NTL.ALL
+
+|SLLI |_rd_=`x0`，_rs1_=`x0`，_shamt_=31 |1|半主机入口标记
+
+|SRAI |_rd_=`x0`，_rs1_=`x0`，_shamt_=7 |1|半主机出口标记
+
+|SUB |_rd_=_x0_ |latexmath:[$2^{10}$] .16+.^| _指定用于未来的标准用途_
+
+|AND |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|OR |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|XOR |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SLL |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SRL |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SRA |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|ADDW |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SUBW |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SLLW |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SRLW |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SRAW |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|FENCE |_rd_=_x0_，_rs1_≠_x0_，_fm_=0，且 _pred_=0 或 _succ_=0 |latexmath:[$2^{10}-63$]
+
+|FENCE |_rd_≠_x0_，_rs1_=_x0_，_fm_=0，且 _pred_=0 或 _succ_=0 |latexmath:[$2^{10}-63$]
+
+|FENCE |_rd_=_rs1_=_x0_，_fm_=0，_pred_=0，_succ_≠0 |15
+
+|FENCE |_pred_=0 或 _succ_=0，_pred_≠W，_succ_ =0 | 15
+
+|FENCE |_rd_=_rs1_=_x0_，_fm_=0，_pred_=W，_succ_=0 |1 | PAUSE
+
+|SLTI |_rd_=_x0_ |latexmath:[$2^{17}$] .10+.^|_指定用于自定义用途_
+
+|SLTIU |_rd_=_x0_ |latexmath:[$2^{17}$]
+
+|SLLI |_rd_=`x0`，且 _rs1_≠`x0` 或 _shamt_≠31 |latexmath:[$2^{11}-1$]
+
+|SRLI |_rd_=`x0` |latexmath:[$2^{11}$]
+
+|SRAI |_rd_=`x0`，且 _rs1_≠`x0` 或 _shamt_≠7 |latexmath:[$2^{11}-1$]
+
+|SLLIW |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SRLIW |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SRAIW |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SLT |_rd_=_x0_ |latexmath:[$2^{10}$]
+
+|SLTU |_rd_=_x0_ |latexmath:[$2^{10}$]
+|===
+
+NOTE: `slli x0, x0, 0x1f` 和 `srai x0, x0, 7` 以前被指定为自定义 HINT，但它们已被用于半主机调用，如 <<ecall-ebreak>> 中所述。
+为了反映它们在实践中的用法，基本 ISA 规范已更改为将它们指定为标准 HINT。
