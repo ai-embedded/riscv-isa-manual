@@ -20,6 +20,7 @@
 #
 
 DOCS := riscv-privileged riscv-unprivileged
+DOCS_ZH := riscv-privileged riscv-unprivileged
 
 DATE ?= $(shell date +%Y-%m-%d)
 SKIP_DOCKER ?= $(shell if command -v docker >/dev/null 2>&1 ; then echo false; else echo true; fi)
@@ -47,6 +48,7 @@ ifneq ($(SKIP_DOCKER),true)
         docker run --rm \
             -v ${PWD}/$@.workdir:/build${DOCKER_VOL_SUFFIX} \
             -v ${PWD}/src:/src:ro \
+            -v ${PWD}/src_zh:/src_zh:ro \
             -v ${PWD}/docs-resources:/docs-resources:ro \
             -w /build \
             $(DOCKER_USER_ARG) \
@@ -59,13 +61,13 @@ else
 endif
 
 ifdef UNRELIABLE_BUT_FASTER_INCREMENTAL_BUILDS
-WORKDIR_SETUP = mkdir -p $@.workdir && ln -sfn ../../src ../../docs-resources $@.workdir/
+WORKDIR_SETUP = mkdir -p $@.workdir && ln -sfn ../../src ../../src_zh ../../docs-resources $@.workdir/
 WORKDIR_TEARDOWN = mv $@.workdir/$@ $@
 else
 WORKDIR_SETUP = \
     rm -rf $@.workdir && \
     mkdir -p $@.workdir && \
-    ln -sfn ../../src ../../docs-resources $@.workdir/
+    ln -sfn ../../src ../../src_zh ../../docs-resources $@.workdir/
 
 WORKDIR_TEARDOWN = \
     mv $@.workdir/$@ $@ && \
@@ -73,11 +75,16 @@ WORKDIR_TEARDOWN = \
 endif
 
 SRC_DIR := src
+SRC_ZH_DIR := src_zh
 BUILD_DIR := build
 
 DOCS_PDF := $(addprefix $(BUILD_DIR)/, $(addsuffix .pdf, $(DOCS)))
 DOCS_HTML := $(addprefix $(BUILD_DIR)/, $(addsuffix .html, $(DOCS)))
 DOCS_EPUB := $(addprefix $(BUILD_DIR)/, $(addsuffix .epub, $(DOCS)))
+
+DOCS_ZH_PDF := $(addprefix $(BUILD_DIR)/, $(addsuffix -zh.pdf, $(DOCS_ZH)))
+DOCS_ZH_HTML := $(addprefix $(BUILD_DIR)/, $(addsuffix -zh.html, $(DOCS_ZH)))
+DOCS_ZH_EPUB := $(addprefix $(BUILD_DIR)/, $(addsuffix -zh.epub, $(DOCS_ZH)))
 
 ENV := LANG=C.utf8
 XTRA_ADOC_OPTS :=
@@ -92,12 +99,21 @@ OPTIONS := --trace \
            $(XTRA_ADOC_OPTS) \
            -D build \
            --failure-level=ERROR
+OPTIONS_ZH := --trace \
+           -a compress \
+           -a mathematical-format=svg \
+           -a pdf-fontsdir=docs-resources/fonts \
+           -a pdf-theme=docs-resources/themes/riscv-pdf-zh.yml \
+           $(XTRA_ADOC_OPTS) \
+           -D build \
+           --failure-level=FATAL
 REQUIRES := --require=asciidoctor-bibtex \
             --require=asciidoctor-diagram \
             --require=asciidoctor-lists \
             --require=asciidoctor-mathematical
+REQUIRES_ZH := --require=asciidoctor-lists
 
-.PHONY: all build clean build-container build-no-container build-docs build-pdf build-html build-epub submodule-check
+.PHONY: all build clean build-container build-no-container build-docs build-pdf build-html build-epub build-zh build-pdf-zh build-html-zh build-epub-zh build-all submodule-check
 
 all: build
 
@@ -114,7 +130,15 @@ build-pdf: $(DOCS_PDF)
 build-html: $(DOCS_HTML)
 build-epub: $(DOCS_EPUB)
 
+build-zh: $(DOCS_ZH_PDF) $(DOCS_ZH_HTML) $(DOCS_ZH_EPUB)
+build-pdf-zh: $(DOCS_ZH_PDF)
+build-html-zh: $(DOCS_ZH_HTML)
+build-epub-zh: $(DOCS_ZH_EPUB)
+
+build-all: $(DOCS_PDF) $(DOCS_HTML) $(DOCS_EPUB) $(DOCS_ZH_PDF) $(DOCS_ZH_HTML) $(DOCS_ZH_EPUB)
+
 ALL_SRCS := $(shell git ls-files $(SRC_DIR))
+ALL_ZH_SRCS := $(shell git ls-files $(SRC_ZH_DIR))
 
 $(BUILD_DIR)/%.pdf: $(SRC_DIR)/%.adoc $(ALL_SRCS)
 	$(WORKDIR_SETUP)
@@ -129,6 +153,22 @@ $(BUILD_DIR)/%.html: $(SRC_DIR)/%.adoc $(ALL_SRCS)
 $(BUILD_DIR)/%.epub: $(SRC_DIR)/%.adoc $(ALL_SRCS)
 	$(WORKDIR_SETUP)
 	$(DOCKER_CMD) $(DOCKER_QUOTE) $(ASCIIDOCTOR_EPUB) $(OPTIONS) $(REQUIRES) $< $(DOCKER_QUOTE)
+	$(WORKDIR_TEARDOWN)
+
+# Chinese build rules
+$(BUILD_DIR)/%-zh.pdf: $(SRC_ZH_DIR)/%.adoc $(ALL_ZH_SRCS)
+	$(WORKDIR_SETUP)
+	$(DOCKER_CMD) $(DOCKER_QUOTE) $(ASCIIDOCTOR_PDF) $(OPTIONS_ZH) $(REQUIRES_ZH) $< -o $(notdir $*)-zh.pdf $(DOCKER_QUOTE)
+	$(WORKDIR_TEARDOWN)
+
+$(BUILD_DIR)/%-zh.html: $(SRC_ZH_DIR)/%.adoc $(ALL_ZH_SRCS)
+	$(WORKDIR_SETUP)
+	$(DOCKER_CMD) $(DOCKER_QUOTE) $(ASCIIDOCTOR_HTML) $(OPTIONS_ZH) $(REQUIRES_ZH) $< -o $(notdir $*)-zh.html $(DOCKER_QUOTE)
+	$(WORKDIR_TEARDOWN)
+
+$(BUILD_DIR)/%-zh.epub: $(SRC_ZH_DIR)/%.adoc $(ALL_ZH_SRCS)
+	$(WORKDIR_SETUP)
+	$(DOCKER_CMD) $(DOCKER_QUOTE) $(ASCIIDOCTOR_EPUB) $(OPTIONS_ZH) $(REQUIRES_ZH) $< -o $(notdir $*)-zh.epub $(DOCKER_QUOTE)
 	$(WORKDIR_TEARDOWN)
 
 build: submodule-check

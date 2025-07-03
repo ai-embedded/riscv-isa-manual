@@ -17,7 +17,7 @@ include::../docs-resources/global-config.adoc[]
 :experimental:
 :reproducible:
 :imagesoutdir: {docdir}/../build/images-out
-:bibtex-file: resources/riscv-spec.bib
+:bibtex-file: src_zh/resources/riscv-spec.bib
 :bibtex-order: alphabetical
 :bibtex-style: apa
 :bibtex-format: asciidoc
