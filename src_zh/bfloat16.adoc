@@ -406,7 +406,7 @@ fcvt.s.bf16 rd, rs1
 概要::
 向量将 FP32 转换为 BF16
 
-Mnemonic::
+助记符::
 vfncvtbf16.f.f.w vd, vs2, vm
 
 编码::
@@ -462,7 +462,7 @@ vfncvtbf16.f.f.w vd, vs2, vm
 概要::
 向量将 BF16 转换为 FP32
 
-Mnemonic::
+助记符::
 vfwcvtbf16.f.f.v vd, vs2, vm
 
 编码::
@@ -520,7 +520,7 @@ vfwcvtbf16.f.f.v vd, vs2, vm
 概要::
 向量 BF16 加宽乘法累加
 
-Mnemonic::
+助记符::
 vfwmaccbf16.vv vd, vs1, vs2, vm +
 vfwmaccbf16.vf vd, rs1, vs2, vm +
 

@@ -69,7 +69,7 @@ latexmath:[$-1$] |latexmath:[$2^{L}-1$] +
  - |latexmath:[$x$] +
  - |latexmath:[$-1$] +
  latexmath:[$-2^{L-1}$] +
-  |latexmath:[$-x$] +
+  |latexmath:[$x$] +
   0
 |===
 

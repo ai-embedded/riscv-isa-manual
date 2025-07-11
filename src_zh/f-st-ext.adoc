@@ -327,7 +327,7 @@ include::images/wavedrom/spfloat-classify.edn[]
 |1 |_rs1_ 是负正规数。
 |2 |_rs1_ 是负次正规数。
 |3 |_rs1_ 是 latexmath:[$-0$]。
-|4 |_rs1_ 是 latexmath:[$\+0$]。
+|4 |_rs1_ 是 latexmath:[$+0$]。
 |5 |_rs1_ 是正次正规数。
 |6 |_rs1_ 是正正规数。
 |7 |_rs1_ 是 latexmath:[$\+\infty$]。

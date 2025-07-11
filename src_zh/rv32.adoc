@@ -487,20 +487,20 @@ EBREAK 的另一个用途是支持“半主机”，其中执行环境包括一�
 
 RV32I 为 HINT 指令保留了大量的编码空间，这些指令通常用于向微架构传递性能提示。与 NOP 指令一样，HINT 不改变任何架构可见状态，除了推进 `pc` 和增加任何适用的性能计数器。实现始终允许忽略编码的提示。
 
-大多数 RV32I HINT 编码为整数计算指令，其中 _rd_=`x0`。其他 RV32I HINT 编码为 FENCE 指令，其前驱或后继集为空，且 _fm_=0。
+大多数 RV32I HINT 被编码为目标寄存器 _rd_=`x0` 的整数计算指令。其他 RV32I HINT 被编码为具有空前驱或后继集合且 _fm_=0 的 FENCE 指令。
 
 [NOTE]
 ====
-选择这些 HINT 编码是为了让简单的实现可以完全忽略 HINT，而是将 HINT 作为常规指令执行，该指令恰好不改变架构状态。例如，如果目标寄存器是 `x0`，则 ADD 是 HINT；五位 _rs1_ 和 _rs2_ 字段编码 HINT 的参数。然而，一个简单的实现可以简单地将 HINT 作为 _rs1_ 和 _rs2_ 的 ADD 执行，该 ADD 写入 `x0`，这没有架构可见的效果。
+选择这些 HINT 编码是为了让简单的实现可以完全忽略 HINT，而是将 HINT 作为恰好不改变架构状态的常规指令执行。例如，如果目标寄存器是 `x0`，ADD 就是一个 HINT；五位 _rs1_ 和 _rs2_ 字段编码 HINT 的参数。然而，简单的实现可以简单地将 HINT 作为 _rs1_ 和 _rs2_ 的 ADD 执行，写入 `x0`，这没有架构可见的效果。
 
-作为另一个示例，_pred_ 字段为零且 _fm_ 字段为零的 FENCE 指令是 HINT；_succ_、_rs1_ 和 _rd_ 字段编码 HINT 的参数。一个简单的实现可以简单地将 HINT 作为 FENCE 执行，该 FENCE 将空集的前置内存访问排序在 _succ_ 字段中编码的任何后续内存访问之前。由于前驱和后继集的交集为空，因此该指令不施加任何内存排序，因此它没有架构可见的效果。
+作为另一个例子，具有零 _pred_ 字段和零 _fm_ 字段的 FENCE 指令是一个 HINT；_succ_、_rs1_ 和 _rd_ 字段编码 HINT 的参数。简单的实现可以简单地将 HINT 作为 FENCE 执行，该 FENCE 在 _succ_ 字段中编码的任何后续内存访问之前对空的先前内存访问集合进行排序。由于前驱和后继集合的交集为空，该指令不施加内存排序，因此没有架构可见的效果。
 ====
 
-<<t-rv32i-hints>> 列出了所有 RV32I HINT 代码点。91% 的 HINT 空间保留用于标准 HINT。HINT 空间的其余部分指定用于自定义 HINT：在此子空间中永远不会定义标准 HINT。
+<<t-rv32i-hints>> 列出了所有 RV32I HINT 代码点。91% 的 HINT 空间保留给标准 HINT。HINT 空间的其余部分指定给自定义 HINT：在此子空间中永远不会定义标准 HINT。
 
 [NOTE]
 ====
-我们预计标准提示最终将包括内存系统空间和时间局部性提示、分支预测提示、线程调度提示、安全标签以及用于仿真/模拟的仪器化标志。
+我们预期标准提示最终将包括内存系统空间和时间局部性提示、分支预测提示、线程调度提示、安全标签以及用于仿真/模拟的仪器标志。
 ====
 
 // this table might still have some problems--some rows might not have landed properly. It needs to be checked cell-by cell.
@@ -511,7 +511,7 @@ RV32I 为 HINT 指令保留了大量的编码空间，这些指令通常用于�
 |===
 |指令 |约束 |代码点 |目的
 
-|LUI |_rd_=`x0` |latexmath:[$2^{20}$] .8+<.^m|_指定用于未来的标准用途_
+|LUI |_rd_=`x0` |latexmath:[$2^{20}$] .8+<.^m|_指定用于未来标准使用_
 
 |AUIPC |_rd_=`x0` |latexmath:[$2^{20}$]
 
@@ -527,16 +527,16 @@ RV32I 为 HINT 指令保留了大量的编码空间，这些指令通常用于�
 
 |ADD |_rd_=`x0`，_rs1_=`x0`，_rs2_≠`x2-x5` | 28
 
-|ADD |_rd_=`x0`，_rs1_=`x0`，_rs2_=`x2-x5` |4|（_rs2_=`x2`）NTL.P1 +
-（_rs2_=`x3`）NTL.PALL +
-（_rs2_=`x4`）NTL.S1 +
-（_rs2_=`x5`）NTL.ALL
+|ADD |_rd_=`x0`，_rs1_=`x0`，_rs2_=`x2-x5` |4|(_rs2_=`x2`) NTL.P1 +
+(_rs2_=`x3`) NTL.PALL +
+(_rs2_=`x4`) NTL.S1 +
+(_rs2_=`x5`) NTL.ALL
 
 |SLLI |_rd_=`x0`，_rs1_=`x0`，_shamt_=31 |1|半主机入口标记
 
 |SRAI |_rd_=`x0`，_rs1_=`x0`，_shamt_=7 |1|半主机出口标记
 
-|SUB |_rd_=`x0` |latexmath:[$2^{10}$] .11+<.^m|_指定用于未来的标准用途_
+|SUB |_rd_=`x0` |latexmath:[$2^{10}$] .11+<.^m|_指定用于未来标准使用_
 
 |AND |_rd_=`x0` |latexmath:[$2^{10}$]
 
@@ -558,11 +558,11 @@ RV32I 为 HINT 指令保留了大量的编码空间，这些指令通常用于�
 
 |FENCE |_rd_=_rs1_=`x0`，_fm_=0，_pred_≠W，_succ_=0 |15
 
-|FENCE |_rd_=_rs1_=`x0`，_fm_=0，_pred_=W，_succ_=0 |1|PAUSE
+|FENCE |_rd_=_rs1_=`x0`，_fm_=0，_pred_=W，_succ_=0 |1 |PAUSE
 
 4+|
 
-|SLTI |_rd_=`x0` |latexmath:[$2^{17}$] .7+<.^m|_指定用于自定义用途_
+|SLTI |_rd_=`x0` |latexmath:[$2^{17}$] .7+<.^m|_指定用于自定义使用_
 
 |SLTIU|_rd_=`x0` |latexmath:[$2^{17}$]
 
@@ -576,6 +576,7 @@ RV32I 为 HINT 指令保留了大量的编码空间，这些指令通常用于�
 
 |SLTU |_rd_=`x0` |latexmath:[$2^{10}$]
 |===
+
 
 NOTE: `slli x0, x0, 0x1f` 和 `srai x0, x0, 7` 以前被指定为自定义 HINT，但它们已被用于半主机调用，如 <<ecall-ebreak>> 中所述。
 为了反映它们在实践中的用法，基本 ISA 规范已更改为将它们指定为标准 HINT。
