@@ -713,6 +713,156 @@ Zba 指令可用于加速生成索引到基本类型数组（半字、字、双�
 
 |===
 
+[[zbkb,密码学位操作]]
+==== Zbkb: 密码学位操作
+
+此扩展包含在密码学工作负载中实现通用操作所必需的指令。
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+
+| &#10003;
+| &#10003;
+|  rol
+| <<insns-rol>>
+
+|
+| &#10003;
+|  rolw
+| <<insns-rolw>>
+
+| &#10003;
+| &#10003;
+|  ror
+| <<insns-ror>>
+
+| &#10003;
+| &#10003;
+|  rori
+| <<insns-rori>>
+
+|
+| &#10003;
+|  roriw
+| <<insns-roriw>>
+
+|
+| &#10003;
+|  rorw
+| <<insns-rorw>>
+
+| &#10003;
+| &#10003;
+|  andn
+| <<insns-andn>>
+
+| &#10003;
+| &#10003;
+|  orn
+| <<insns-orn>>
+
+| &#10003;
+| &#10003;
+|  xnor
+| <<insns-xnor>>
+
+| &#10003;
+| &#10003;
+|  pack
+| <<insns-pack>>
+
+| &#10003;
+| &#10003;
+|  packh
+| <<insns-packh>>
+
+|
+| &#10003;
+|  packw
+| <<insns-packw>>
+
+| &#10003;
+| &#10003;
+|  brev8
+| <<insns-brev8>>
+
+| &#10003;
+| &#10003;
+|  rev8
+| <<insns-rev8>>
+
+| &#10003;
+|
+|  zip
+| <<insns-zip>>
+
+| &#10003;
+|
+|  unzip
+| <<insns-unzip>>
+
+|===
+
+[[zbkc,密码学无进位乘法]]
+==== Zbkc: 密码学无进位乘法
+
+无进位乘法是在 GF(2) 上的多项式环中的乘法。这是某些密码学工作负载中的关键操作，
+特别是 AES-GCM 认证加密方案。
+此扩展仅提供高效实现 GHASH 操作所需的指令，该操作是此工作负载的一部分。
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+|&#10003;
+|&#10003;
+|clmul _rd_, _rs1_, _rs2_
+|<<#insns-clmul>>
+
+|&#10003;
+|&#10003;
+|clmulh _rd_, _rs1_, _rs2_
+|<<#insns-clmulh>>
+
+|===
+
+[[zbkx,交叉开关排列]]
+==== Zbkx: 交叉开关排列
+
+这些指令在通用寄存器内部实现 4 位和 8 位元素的"查找表"。
+_rs1_ 用作 N 位字的向量，_rs2_ 用作到 _rs1_ 的 N 位索引的向量。
+_rs1_ 中的元素被替换为 _rs2_ 中索引的元素，如果到 _rs2_ 的索引超出边界则为零。
+
+这些指令对于表达 N 位到 N 位的布尔运算和实现具有秘密相关内存访问（特别是 S 盒）的密码学代码很有用，
+使得执行延迟不依赖于所操作的（秘密）数据。
+
+[%header,cols="^1,^1,4,8"]
+|===
+|RV32
+|RV64
+|助记符
+|指令
+
+|&#10003;
+|&#10003;
+|xperm4 _rd_, _rs1_, _rs2_
+|<<#insns-xperm4>>
+
+|&#10003;
+|&#10003;
+|xperm8 _rd_, _rs1_, _rs2_
+|<<#insns-xperm8>>
+
+|===
+
 <<<
 
 [#insns-b,reftext="指令（按字母顺序）"]
@@ -921,43 +1071,2496 @@ X(rd) = X(rs1) & ~(1 << index)
 |已批准
 |===
 
-// 注：此处省略了大量其他指令的详细定义，包括：
-// bext, bexti, binv, binvi, bset, bseti, clmul, clmulh, clmulr
-// clz, clzw, cpop, cpopw, ctz, ctzw, max, maxu, min, minu
-// orc.b, orn, rev8, rol, rolw, ror, rori, roriw, rorw
-// sext.b, sext.h, sh1add, sh1add.uw, sh2add, sh2add.uw
-// sh3add, sh3add.uw, slli.uw, xnor, zext.h
-// 以及其他扩展指令和软件优化指南
-//
-// 这些指令的详细定义遵循类似的格式，包含：
-// - 概要和助记符
-// - 编码图表  
-// - 操作描述和伪代码
-// - 包含的扩展信息
+<<<
+[#insns-bext,reftext="单位提取（寄存器）"]
+==== bext
+
+概要::
+单位提取（寄存器）
+
+助记符::
+bext _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5, attr: ['BEXT'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x24, attr: ['BCLR/BEXT'] },
+]}
+....
+
+描述::
+此指令从 _rs1_ 中提取由 _rs2_ 指定索引处的单个位。
+索引从 _rs2_ 的低 log2(XLEN) 位读取。
+
+操作::
+[source,sail]
+--
+let index = X(rs2) & (XLEN - 1);
+X(rd) = (X(rs1) >> index) & 1;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbs (<<#zbs>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-bexti,reftext="单位提取（立即数）"]
+==== bexti
+
+概要::
+单位提取（立即数）
+
+助记符::
+bexti _rd_, _rs1_, _shamt_
+
+编码（RV32）::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5, attr: ['BEXTI'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'shamt' },
+    { bits:  7, name: 0x24, attr: ['BEXTI'] },
+]}
+....
+
+编码（RV64）::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5, attr: ['BEXTI'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  6, name: 'shamt' },
+    { bits:  6, name: 0x12, attr: ['BEXTI'] },
+]}
+....
+
+描述::
+此指令从 _rs1_ 中提取由 _shamt_ 指定索引处的单个位。
+索引从 _shamt_ 的低 log2(XLEN) 位读取。
+对于 RV32，对应于 shamt[5]=1 的编码是保留的。
+
+操作::
+[source,sail]
+--
+let index = shamt & (XLEN - 1);
+X(rd) = (X(rs1) >> index) & 1;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbs (<<#zbs>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-binv,reftext="单位反转（寄存器）"]
+==== binv
+
+概要::
+单位反转（寄存器）
+
+助记符::
+binv _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['BINV'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x34, attr: ['BINV'] },
+]}
+....
+
+描述::
+此指令返回 _rs1_，在 _rs2_ 指定的索引处反转单个位。
+索引从 _rs2_ 的低 log2(XLEN) 位读取。
+
+操作::
+[source,sail]
+--
+let index = X(rs2) & (XLEN - 1);
+X(rd) = X(rs1) ^ (1 << index)
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbs (<<#zbs>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-binvi,reftext="单位反转（立即数）"]
+==== binvi
+
+概要::
+单位反转（立即数）
+
+助记符::
+binvi _rd_, _rs1_, _shamt_
+
+编码（RV32）::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['BINVI'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'shamt' },
+    { bits:  7, name: 0x34, attr: ['BINVI'] },
+]}
+....
+
+编码（RV64）::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['BINVI'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  6, name: 'shamt' },
+    { bits:  6, name: 0x1a, attr: ['BINVI'] },
+]}
+....
+
+描述::
+此指令返回 _rs1_，在 _shamt_ 指定的索引处反转单个位。
+索引从 _shamt_ 的低 log2(XLEN) 位读取。
+对于 RV32，对应于 shamt[5]=1 的编码是保留的。
+
+操作::
+[source,sail]
+--
+let index = shamt & (XLEN - 1);
+X(rd) = X(rs1) ^ (1 << index)
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbs (<<#zbs>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-bset,reftext="单位设置（寄存器）"]
+==== bset
+
+概要::
+单位设置（寄存器）
+
+助记符::
+bset _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['BSET'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x14, attr: ['BSET'] },
+]}
+....
+
+描述::
+此指令返回 _rs1_，在 _rs2_ 指定的索引处设置单个位。
+索引从 _rs2_ 的低 log2(XLEN) 位读取。
+
+操作::
+[source,sail]
+--
+let index = X(rs2) & (XLEN - 1);
+X(rd) = X(rs1) | (1 << index)
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbs (<<#zbs>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-bseti,reftext="单位设置（立即数）"]
+==== bseti
+
+概要::
+单位设置（立即数）
+
+助记符::
+bseti _rd_, _rs1_, _shamt_
+
+编码（RV32）::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['BSETI'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'shamt' },
+    { bits:  7, name: 0x14, attr: ['BSETI'] },
+]}
+....
+
+编码（RV64）::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['BSETI'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  6, name: 'shamt' },
+    { bits:  6, name: 0x0a, attr: ['BSETI'] },
+]}
+....
+
+描述::
+此指令返回 _rs1_，在 _shamt_ 指定的索引处设置单个位。
+索引从 _shamt_ 的低 log2(XLEN) 位读取。
+对于 RV32，对应于 shamt[5]=1 的编码是保留的。
+
+操作::
+[source,sail]
+--
+let index = shamt & (XLEN - 1);
+X(rd) = X(rs1) | (1 << index)
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbs (<<#zbs>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-clmul,reftext="无进位乘法（低位部分）"]
+==== clmul
+
+概要::
+无进位乘法（低位部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的下半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|v1.0
+|已批准
+
+|Zbkc (<<#zbkc>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-clmulh,reftext="无进位乘法（高位部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高位部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的上半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|v1.0
+|已批准
+
+|Zbkc (<<#zbkc>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-clmulr,reftext="无进位乘法（反转）"]
+==== clmulr
+
+概要::
+无进位乘法（反转）
+
+助记符::
+clmulr _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x2, attr: ['CLMULR'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+*clmulr* 产生 2·XLEN 无进位乘积的 2·XLEN−2:XLEN-1 位。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i - 1));
+            else output;
+}
+
+X[rd] = output
+--
+
+.注意
+[NOTE, caption="A" ]
+===============================================================
+*clmulr* 指令用于加速 CRC 计算。
+指令助记符中的 *r* 代表 _反转_，因为该指令等效于对输入进行位反转，执行
+*clmul*，然后对输出进行位反转。
+===============================================================
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-clz,reftext="计算前导零位"]
+==== clz
+
+概要::
+计算前导零位
+
+助记符::
+clz _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLZ']  },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 0x0, attr: ['CLZ'] },
+    { bits:  7, name: 0x30, attr: ['CLZ']  },
+]}
+....
+
+描述::
+此指令计算从最高有效位（即 XLEN-1）开始到第 0 位，第一个 1 之前的 0 的个数。
+因此，如果输入为 0，输出为 XLEN；如果输入的最高有效位为 1，输出为 0。
+
+操作::
+[source,sail]
+--
+val HighestSetBit : forall ('N : Int), 'N >= 0. bits('N) -> int
+
+function HighestSetBit x = {
+  foreach (i from (xlen - 1) to 0 by 1 in dec)
+    if [x[i]] == 0b1 then return(i) else ();
+  return -1;
+}
+
+let rs = X(rs);
+X[rd] = (xlen - 1) - HighestSetBit(rs);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-clzw,reftext="计算字中的前导零位"]
+==== clzw
+
+概要::
+计算字中的前导零位
+
+助记符::
+clzw _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x1b, attr: ['OP-IMM-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLZW'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 0x0, attr: ['CLZW'] },
+    { bits:  7, name: 0x30, attr: ['CLZW'] },
+]}
+....
+
+描述::
+此指令计算从第 31 位开始到第 0 位，第一个 1 之前的 0 的个数。
+因此，如果最低有效字为 0，输出为 32；如果字的最高有效位（即第 31 位）为 1，输出为 0。
+
+操作::
+[source,sail]
+--
+val HighestSetBit32 : forall ('N : Int), 'N >= 0. bits('N) -> int
+
+function HighestSetBit32 x = {
+  foreach (i from 31 to 0 by 1 in dec)
+    if [x[i]] == 0b1 then return(i) else ();
+  return -1;
+}
+
+let rs = X(rs);
+X[rd] = 31 - HighestSetBit(rs);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-cpop,reftext="计算设置位"]
+==== cpop
+
+概要::
+计算设置位
+
+助记符::
+cpop _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CPOP'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 0x2, attr: ['CPOP'] },
+    { bits:  7, name: 0x30, attr: ['CPOP'] },
+]}
+....
+
+描述::
+此指令计算源寄存器中 1 的个数（即设置位）。
+
+操作::
+[source,sail]
+--
+let bitcount = 0;
+let rs = X(rs);
+
+foreach (i from 0 to (xlen - 1) in inc)
+    if rs[i] == 0b1 then bitcount = bitcount + 1 else ();
+
+X[rd] = bitcount
+--
+
+.软件提示
+[NOTE, caption="SH" ]
+===============================================================
+此操作被称为总体计数、popcount、横向求和、位求和或汉明权重。
+
+在 RV32 上，GCC 内置函数 `+__builtin_popcount (unsigned int x)+` 由 cpop 实现；
+在 RV64 上由 *cpopw* 实现。
+对于 LP64，GCC 内置函数 `+__builtin_popcountl (unsigned long x)+` 在 RV64 上由 *cpop* 实现。
+===============================================================
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-cpopw,reftext="计算字中的设置位"]
+==== cpopw
+
+概要::
+计算字中的设置位
+
+助记符::
+cpopw _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x1b, attr: ['OP-IMM-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CPOPW'] },
+    { bits:  5, name: 'rs' },
+    { bits:  5, name: 0x2, attr: ['CPOPW'] },
+    { bits:  7, name: 0x30, attr: ['CPOPW'] },
+]}
+....
+
+描述::
+此指令计算源寄存器的最低有效字中 1 的个数（即设置位）。
+
+操作::
+[source,sail]
+--
+let bitcount = 0;
+let val = X(rs);
+
+foreach (i from 0 to 31 in inc)
+    if val[i] == 0b1 then bitcount = bitcount + 1 else ();
+
+X[rd] = bitcount
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-ctz,reftext="计算后导零位"]
+==== ctz
+
+概要::
+计算后导零位
+
+助记符::
+ctz _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CTZ/CTZW'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 0x1, attr: ['CTZ/CTZW'] },
+    { bits:  7, name: 0x30, attr: ['CTZ/CTZW'] },
+]}
+....
+
+描述::
+此指令计算从最低有效位（即第 0 位）开始到最高有效位（即 XLEN-1），第一个 1 之前的 0 的个数。
+因此，如果输入为 0，输出为 XLEN；如果输入的最低有效位为 1，输出为 0。
+
+操作::
+[source,sail]
+--
+val LowestSetBit : forall ('N : Int), 'N >= 0. bits('N) -> int
+
+function LowestSetBit x = {
+  foreach (i from 0 to (xlen - 1) by 1 in dec)
+    if [x[i]] == 0b1 then return(i) else ();
+  return xlen;
+}
+
+let rs = X(rs);
+X[rd] = LowestSetBit(rs);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-ctzw,reftext="计算字中的后导零位"]
+==== ctzw
+
+概要::
+计算字中的后导零位
+
+助记符::
+ctzw _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x1b, attr: ['OP-IMM-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CTZ/CTZW'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 0x1, attr: ['CTZ/CTZW'] },
+    { bits:  7, name: 0x30, attr: ['CTZ/CTZW'] },
+]}
+....
+
+描述::
+此指令计算从最低有效位（即第 0 位）开始到最低有效字的最高有效位（即第 31 位），第一个 1 之前的 0 的个数。
+因此，如果最低有效字为 0，输出为 32；如果输入的最低有效位为 1，输出为 0。
+
+操作::
+[source,sail]
+--
+val LowestSetBit32 : forall ('N : Int), 'N >= 0. bits('N) -> int
+
+function LowestSetBit32 x = {
+  foreach (i from 0 to 31 by 1 in dec)
+    if [x[i]] == 0b1 then return(i) else ();
+  return 32;
+}
+
+let rs = X(rs);
+X[rd] = LowestSetBit32(rs);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-max,reftext="最大值"]
+==== max
+
+概要::
+最大值
+
+助记符::
+max _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x6, attr: ['MAX']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x05, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+此指令返回两个有符号整数中较大的一个。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+
+let result = if   rs1_val <_s rs2_val
+             then rs2_val
+             else rs1_val;
+
+X(rd) = result;
+--
+
+.软件提示
+[NOTE, caption="SW"]
+===============================================================
+计算有符号整数的绝对值可以使用以下序列执行：*neg rD,rS* 后跟 *max rD,rS,rD*。
+当使用这个常见序列时，建议将它们调度为中间没有其他指令，
+以便针对此进行优化的实现可以将它们融合在一起。
+===============================================================
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-maxu,reftext="无符号最大值"]
+==== maxu
+
+概要::
+无符号最大值
+
+助记符::
+maxu _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x7, attr: ['MAXU']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x05, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+此指令返回两个无符号整数中较大的一个。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+
+let result = if   rs1_val <_u rs2_val
+             then rs2_val
+             else rs1_val;
+
+X(rd) = result;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-min,reftext="最小值"]
+==== min
+
+概要::
+最小值
+
+助记符::
+min _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x4, attr: ['MIN']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x05, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+此指令返回两个有符号整数中较小的一个。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+
+let result = if   rs1_val <_s rs2_val
+             then rs1_val
+             else rs2_val;
+
+X(rd) = result;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-minu,reftext="无符号最小值"]
+==== minu
+
+概要::
+无符号最小值
+
+助记符::
+minu _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5, attr: ['MINU']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x05, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+此指令返回两个无符号整数中较小的一个。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+
+let result = if   rs1_val <_u rs2_val
+             then rs1_val
+             else rs2_val;
+
+X(rd) = result;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-orc_b,reftext="按字节粒度的位或组合"]
+==== orc.b
+
+概要::
+按字节粒度的位或组合
+
+助记符::
+orc.b _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5 },
+    { bits:  5, name: 'rs' },
+    { bits: 12, name: 0x287 }
+]}
+....
+
+描述::
+使用位或逻辑组合每个字节内的位。
+如果 _rs_ 的相应字节内没有位被设置，则将结果 _rd_ 中每个字节的位设置为全零；
+如果 _rs_ 的相应字节内有任何位被设置，则设置为全一。
+
+操作::
+[source,sail]
+--
+let input = X(rs);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 8) by 8) {
+   output[(i + 7)..i] = if   input[(i + 7)..i] == 0
+                        then 0b00000000
+                        else 0b11111111;
+}
+
+X[rd] = output;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-orn,reftext="反转操作数的 OR"]
+==== orn
+
+概要::
+反转操作数的 OR
+
+助记符::
+orn _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x6, attr: ['ORN']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x20, attr: ['ORN'] },
+]}
+....
+
+描述::
+此指令在 _rs1_ 和 _rs2_ 的按位反转之间执行按位逻辑 OR 操作。
+
+操作::
+[source,sail]
+--
+X(rd) = X(rs1) | ~X(rs2);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-pack,reftext="打包寄存器的低半部分"]
+==== pack
+
+概要::
+将 _rs1_ 和 _rs2_ 的低半部分打包到 _rd_ 中。
+
+助记符::
+pack _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    {bits:  7, name: 0x33, attr: ['OP'] },
+    {bits: 5, name: 'rd'},
+    {bits: 3, name: 0x4, attr:['PACK']},
+    {bits: 5, name: 'rs1'},
+    {bits: 5, name: 'rs2'},
+    {bits: 7, name: 0x4, attr:['PACK']},
+]}
+....
+
+描述::
+pack 指令将 _rs1_ 和 _rs2_ 的 XLEN/2 位低半部分打包到 _rd_ 中，_rs1_ 在低半部分，_rs2_ 在高半部分。
+
+操作::
+[source,sail]
+--
+let lo_half : bits(xlen/2) = X(rs1)[xlen/2-1..0];
+let hi_half : bits(xlen/2) = X(rs2)[xlen/2-1..0];
+X(rd) = EXTZ(hi_half @ lo_half);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+注意：对于 RV32，_rs2_=`x0` 的 `pack` 指令就是 `zext.h` 指令。
+因此，对于 RV32，任何包含 `pack` 指令的扩展也包含 `zext.h` 指令（但不一定包含 `c.zext.h` 指令，只有当 Zcb 和 Zbb 扩展都实现时才保证存在）。
+
+<<<
+[#insns-packh,reftext="打包寄存器的低字节"]
+==== packh
+
+概要::
+将 _rs1_ 和 _rs2_ 的低字节打包到 _rd_ 中。
+
+助记符::
+packh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    {bits:  7, name: 0x33, attr: ['OP'] },
+    {bits: 5, name: 'rd'},
+    {bits: 3, name: 0x7, attr: ['PACKH']},
+    {bits: 5, name: 'rs1'},
+    {bits: 5, name: 'rs2'},
+    {bits: 7, name: 0x4, attr: ['PACKH']},
+]}
+....
+
+描述::
+packh 指令将 _rs1_ 和 _rs2_ 的最低有效字节打包到 _rd_ 的 16 个最低有效位中，其余部分零扩展。
+
+操作::
+[source,sail]
+--
+let lo_half : bits(8) = X(rs1)[7..0];
+let hi_half : bits(8) = X(rs2)[7..0];
+X(rd) = EXTZ(hi_half @ lo_half);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-packw,reftext="打包寄存器的低 16 位（RV64）"]
+==== packw
+
+概要::
+在 RV64 上将 _rs1_ 和 _rs2_ 的低 16 位打包到 _rd_ 中。
+
+助记符::
+packw _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x3b, attr: ['OP-32']},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x4},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 7, name: 0x4},
+]}
+....
+
+描述::
+此指令将 _rs1_ 和 _rs2_ 的低 16 位打包到 _rd_ 的 32 个最低有效位中，将 32 位结果符号扩展到 _rd_ 的其余部分。
+此指令仅存在于基于 RV64 的系统上。
+
+操作::
+[source,sail]
+--
+let lo_half : bits(16) = X(rs1)[15..0];
+let hi_half : bits(16) = X(rs2)[15..0];
+X(rd) = EXTS(hi_half @ lo_half);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+注意：对于 RV64，_rs2_=`x0` 的 `packw` 指令就是 `zext.h` 指令。
+因此，对于 RV64，任何包含 `packw` 指令的扩展也包含 `zext.h` 指令（但不一定包含 `c.zext.h` 指令，只有当 Zcb 和 Zbb 扩展都实现时才保证存在）。
+
+<<<
+[#insns-brev8,reftext="字节内位反转"]
+==== brev8
+
+概要::
+反转源寄存器每个字节中的位。
+
+助记符::
+brev8 _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5 },
+    { bits:  5, name: 'rs' },
+    { bits: 12, name: 0x687 }
+]}
+....
+
+描述::
+此指令反转寄存器每个字节中的位顺序。
+
+操作::
+[source,sail]
+--
+result : xlenbits = EXTZ(0b0);
+foreach (i from 0 to sizeof(xlen) by 8) {
+    result[i+7..i] = reverse_bits_in_byte(X(rs1)[i+7..i]);
+};
+X(rd) = result;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-rol,reftext="左旋转（寄存器）"]
+==== rol
+
+概要::
+左旋转（寄存器）
+
+助记符::
+rol _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['ROL']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x30, attr: ['ROL'] },
+]}
+....
+
+描述::
+此指令对 _rs1_ 执行左旋转，旋转量为 _rs2_ 最低有效 log2(XLEN) 位的值。
+
+操作::
+[source,sail]
+--
+let shamt = if   xlen == 32
+            then X(rs2)[4..0]
+            else X(rs2)[5..0];
+let result = (X(rs1) << shamt) | (X(rs1) >> (xlen - shamt));
+
+X(rd) = result;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
+|已批准
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-rolw,reftext="左旋转字（寄存器）"]
+==== rolw
+
+概要::
+左旋转字（寄存器）
+
+助记符::
+rolw _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x3b, attr: ['OP-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['ROLW']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x30, attr: ['ROLW'] },
+]}
+....
+
+描述::
+此指令对 _rs1_ 的最低有效字执行左旋转，旋转量为 _rs2_ 最低有效 5 位的值。
+结果字值通过将第 31 位复制到所有更高有效位来符号扩展。
+
+操作::
+[source,sail]
+--
+let rs1 = EXTZ(X(rs1)[31..0])
+let shamt = X(rs2)[4..0];
+let result = (rs1 << shamt) | (rs1 >> (32 - shamt));
+X(rd) = EXTS(result[31..0]);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
+|已批准
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-ror,reftext="右旋转（寄存器）"]
+==== ror
+
+概要::
+右旋转
+
+助记符::
+ror _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5, attr: ['ROR']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x30, attr: ['ROR'] },
+]}
+....
+
+描述::
+此指令对 _rs1_ 执行右旋转，旋转量为 _rs2_ 最低有效 log2(XLEN) 位的值。
+
+操作::
+[source,sail]
+--
+let shamt = if   xlen == 32
+            then X(rs2)[4..0]
+            else X(rs2)[5..0];
+let result = (X(rs1) >> shamt) | (X(rs1) << (xlen - shamt));
+
+X(rd) = result;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
+|已批准
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-rori,reftext="右旋转（立即数）"]
+==== rori
+
+概要::
+右旋转（立即数）
+
+助记符::
+rori _rd_, _rs1_, _shamt_
+
+编码（RV32）::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5, attr: ['RORI']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'shamt' },
+    { bits:  7, name: 0x30, attr: ['RORI'] },
+]}
+....
+
+编码（RV64）::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5, attr: ['RORI']},
+    { bits:  5, name: 'rs1' },
+    { bits:  6, name: 'shamt' },
+    { bits:  6, name: 0x18, attr: ['RORI'] },
+]}
+....
+
+描述::
+此指令对 _rs1_ 执行右旋转，旋转量为 _shamt_ 最低有效 log2(XLEN) 位的值。
+对于 RV32，对应于 shamt[5]=1 的编码是保留的。
+
+操作::
+[source,sail]
+--
+let shamt = if   xlen == 32
+            then shamt[4..0]
+            else shamt[5..0];
+let result = (X(rs1) >> shamt) | (X(rs1) << (xlen - shamt));
+
+X(rd) = result;
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
+|已批准
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-roriw,reftext="字右旋转（立即数）"]
+==== roriw
+
+概要::
+立即数字右旋转
+
+助记符::
+roriw _rd_, _rs1_, _shamt_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x1b, attr: ['OP-IMM-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5, attr: ['RORIW']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'shamt' },
+    { bits:  7, name: 0x30, attr: ['RORIW'] },
+]}
+....
+
+描述::
+此指令对 _rs1_ 的最低有效字执行右旋转，旋转量为 _shamt_ 最低有效 log2(XLEN) 位的值。
+结果字值通过将第 31 位复制到所有更高有效位来符号扩展。
+
+操作::
+[source,sail]
+--
+let rs1_data = EXTZ(X(rs1)[31..0];
+let result = (rs1_data >> shamt) | (rs1_data << (32 - shamt));
+X(rd) = EXTS(result[31..0]);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
+|已批准
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-rorw,reftext="字右旋转（寄存器）"]
+==== rorw
+
+概要::
+字右旋转（寄存器）
+
+助记符::
+rorw _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x3b, attr: ['OP-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5, attr: ['RORW']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x30, attr: ['RORW'] },
+]}
+....
+
+描述::
+此指令对 _rs1_ 的最低有效字执行右旋转，旋转量为 _rs2_ 最低有效 5 位的值。
+结果字通过将第 31 位复制到所有更高有效位来符号扩展。
+
+操作::
+[source,sail]
+--
+let rs1 = EXTZ(X(rs1)[31..0])
+let shamt = X(rs2)[4..0];
+let result = (rs1 >> shamt) | (rs1 << (32 - shamt));
+X(rd) = EXTS(result);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
+|已批准
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-sext_b,reftext="字节符号扩展"]
+==== sext.b
+
+概要::
+字节符号扩展
+
+助记符::
+sext.b _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['SEXT.B/SEXT.H'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 0x04, attr: ['SEXT.B'] },
+    { bits:  7, name: 0x30 },
+]}
+....
+
+描述::
+此指令将源寄存器中的最低有效字节符号扩展到 XLEN，通过将字节中的最高有效位（即第 7 位）复制到所有更高有效位。
+
+操作::
+[source,sail]
+--
+X(rd) = EXTS(X(rs)[7..0]);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
+|已批准
+|===
+
+<<<
+[#insns-sext_h,reftext="半字符号扩展"]
+==== sext.h
+
+概要::
+半字符号扩展
+
+助记符::
+sext.h _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['SEXT.B/SEXT.H'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 0x05, attr: ['SEXT.H'] },
+    { bits:  7, name: 0x30 },
+]}
+....
+
+描述::
+此指令将 _rs_ 中的最低有效半字符号扩展到 XLEN，通过将半字中的最高有效位（即第 15 位）复制到所有更高有效位。
+
+操作::
+[source,sail]
+--
+X(rd) = EXTS(X(rs)[15..0]);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
+|已批准
+|===
+
+<<<
+[#insns-sh1add,reftext=左移 1 位后加法]
+==== sh1add
+
+概要::
+左移 1 位后加法
+
+助记符::
+sh1add _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x2, attr: ['SH1ADD'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x10, attr: ['SH1ADD'] },
+]}
+....
+
+描述::
+此指令将 _rs1_ 左移 1 位，然后与 _rs2_ 相加。
+
+操作::
+[source,sail]
+--
+X(rd) = X(rs2) + (X(rs1) << 1);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zba (<<#zba>>)
+|0.93
+|已批准
+|===
+
+<<<
+[#insns-sh1add_uw,reftext=无符号字左移 1 位后加法]
+==== sh1add.uw
+
+概要::
+无符号字左移 1 位后加法
+
+助记符::
+sh1add.uw _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x3b, attr: ['OP-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x2, attr: ['SH1ADD.UW'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x10, attr: ['SH1ADD.UW']  },
+]}
+....
+
+描述::
+此指令执行两个加数的 XLEN 宽度加法。
+第一个加数是 _rs2_。第二个加数是从 _rs1_ 的最低有效字提取并左移 1 位后形成的无符号值。
+
+操作::
+[source,sail]
+--
+let base = X(rs2);
+let index = EXTZ(X(rs1)[31..0]);
+
+X(rd) = base + (index << 1);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zba (<<#zba>>)
+|0.93
+|已批准
+|===
+
+<<<
+[#insns-sh2add,reftext=左移 2 位后加法]
+==== sh2add
+
+概要::
+左移 2 位后加法
+
+助记符::
+sh2add _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x4, attr: ['SH2ADD'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x10, attr: ['SH2ADD'] },
+]}
+....
+
+描述::
+此指令将 _rs1_ 左移 2 位，然后与 _rs2_ 相加。
+
+操作::
+[source,sail]
+--
+X(rd) = X(rs2) + (X(rs1) << 2);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zba (<<#zba>>)
+|0.93
+|已批准
+|===
+
+<<<
+[#insns-sh2add_uw,reftext=无符号字左移 2 位后加法]
+==== sh2add.uw
+
+概要::
+无符号字左移 2 位后加法
+
+助记符::
+sh2add.uw _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x3b, attr: ['OP-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x4, attr: ['SH2ADD.UW'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x10, attr: ['SH2ADD.UW'] },
+]}
+....
+
+描述::
+此指令执行两个加数的 XLEN 宽度加法。
+第一个加数是 _rs2_。
+第二个加数是从 _rs1_ 的最低有效字提取并左移 2 位后形成的无符号值。
+
+操作::
+[source,sail]
+--
+let base = X(rs2);
+let index = EXTZ(X(rs1)[31..0]);
+
+X(rd) = base + (index << 2);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zba (<<#zba>>)
+|0.93
+|已批准
+|===
+
+<<<
+[#insns-sh3add,reftext=左移 3 位后加法]
+==== sh3add
+
+概要::
+左移 3 位后加法
+
+助记符::
+sh3add _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x6, attr: ['SH3ADD'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x10, attr: ['SH3ADD'] },
+]}
+....
+
+描述::
+此指令将 _rs1_ 左移 3 位，然后与 _rs2_ 相加。
+
+操作::
+[source,sail]
+--
+X(rd) = X(rs2) + (X(rs1) << 3);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zba (<<#zba>>)
+|0.93
+|已批准
+|===
+
+<<<
+[#insns-sh3add_uw,reftext=无符号字左移 3 位后加法]
+==== sh3add.uw
+
+概要::
+无符号字左移 3 位后加法
+
+助记符::
+sh3add.uw _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x3b, attr: ['OP-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x6, attr: ['SH3ADD.UW'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x10, attr: ['SH3ADD.UW'] },
+]}
+....
+
+描述::
+此指令执行两个加数的 XLEN 宽度加法。第一个加数是 _rs2_。第二个加数是从 _rs1_ 的最低有效字提取并左移 3 位后形成的无符号值。
+
+操作::
+[source,sail]
+--
+let base = X(rs2);
+let index = EXTZ(X(rs1)[31..0]);
+
+X(rd) = base + (index << 3);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zba (<<#zba>>)
+|0.93
+|已批准
+|===
+
+<<<
+[#insns-slli_uw,reftext="无符号字左移（立即数）"]
+==== slli.uw
+
+概要::
+无符号字左移（立即数）
+
+助记符::
+slli.uw _rd_, _rs1_, _shamt_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x1b, attr: ['OP-IMM-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['SLLI.UW'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  6, name: 'shamt' },
+    { bits:  6, name: 0x02, attr: ['SLLI.UW'] },
+]}
+....
+
+描述::
+此指令取 _rs1_ 的最低有效字，将其零扩展，然后左移立即数指定的位数。
+
+操作::
+[source,sail]
+--
+X(rd) = (EXTZ(X(rs)[31..0]) << shamt);
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zba (<<#zba>>)
+|0.93
+|已批准
+|===
+
+.架构说明
+[NOTE, caption="A" ]
+===============================================================
+此指令与在 _rs1_ 上先执行 *zext.w* 再移位的 *slli* 相同。
+===============================================================
+
+<<<
+[#insns-unzip,reftext="位去交错"]
+==== unzip
+
+概要::
+将源寄存器的奇偶位分别放置到目标寄存器的上半部分和下半部分。
+
+助记符::
+unzip _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x13, attr: ['OP-IMM']},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x5},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 0xf},
+{bits: 7, name: 0x4},
+]}
+....
+
+描述::
+此指令将源字的所有奇位和偶位分散到目标字的高半部分和低半部分。
+它是 <<insns-zip-sc,zip>> 指令的逆操作。
+此指令仅在 RV32 上可用。
+
+操作::
+[source,sail]
+--
+foreach (i from 0 to xlen/2-1) {
+  X(rd)[i] = X(rs1)[2*i]
+  X(rd)[i+xlen/2] = X(rs1)[2*i+1]
+}
+--
+
+.软件提示
+[NOTE, caption="SH" ]
+===============================================================
+此指令对在 32 位架构上实现 SHA3 密码学哈希函数很有用，
+因为它直接实现了用于加速 64 位旋转的位交错操作。
+===============================================================
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbkb (<<#zbkb>>) (RV32)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-xnor,reftext="异或非"]
+==== xnor
+
+概要::
+异或非
+
+助记符::
+xnor _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x4, attr: ['XNOR']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x20, attr: ['XNOR'] },
+]}
+....
+
+描述::
+此指令对 _rs1_ 和 _rs2_ 执行按位异或非运算。
+
+操作::
+[source,sail]
+--
+X(rd) = ~(X(rs1) ^ X(rs2));
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
+|已批准
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-xperm8,reftext="交叉开关排列（字节）"]
+==== xperm8
+
+概要::
+在寄存器中对向量索引的字节查找。
+
+助记符::
+xperm8 _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33, attr: ['OP'] },
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x4},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 7, name: 0x14},
+]}
+....
+
+描述::
+xperm8 指令操作字节。
+_rs1_ 寄存器包含一个由 XLEN/8 个 8 位元素组成的向量。
+_rs2_ 寄存器包含一个由 XLEN/8 个 8 位索引组成的向量。
+结果是将 _rs2_ 中的每个元素替换为 _rs1_ 中的索引元素，
+如果 _rs2_ 中的索引超出边界则为零。
+
+操作::
+[source,sail]
+--
+val xperm8_lookup : (bits(8), xlenbits) -> bits(8)
+function xperm8_lookup (idx, lut) = {
+    (lut >> (idx @ 0b000))[7..0]
+}
+
+function clause execute ( XPERM8 (rs2,rs1,rd)) = {
+    result : xlenbits = EXTZ(0b0);
+    foreach(i from 0 to xlen by 8) {
+        result[i+7..i] = xperm8_lookup(X(rs2)[i+7..i], X(rs1));
+    };
+    X(rd) = result;
+    RETIRE_SUCCESS
+}
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbkx (<<#zbkx>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-xperm4,reftext="交叉开关排列（半字节）"]
+==== xperm4
+
+概要::
+对向量索引的半字节查找。
+
+助记符::
+xperm4 _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x33, attr: ['OP'] },
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x2},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 'rs2'},
+{bits: 7, name: 0x14},
+]}
+....
+
+描述::
+xperm4 指令操作半字节。
+_rs1_ 寄存器包含一个由 XLEN/4 个 4 位元素组成的向量。
+_rs2_ 寄存器包含一个由 XLEN/4 个 4 位索引组成的向量。
+结果是将 _rs2_ 中的每个元素替换为 _rs1_ 中的索引元素，
+如果 _rs2_ 中的索引超出边界则为零。
+
+操作::
+[source,sail]
+--
+val xperm4_lookup : (bits(4), xlenbits) -> bits(4)
+function xperm4_lookup (idx, lut) = {
+    (lut >> (idx @ 0b00))[3..0]
+}
+
+function clause execute ( XPERM4 (rs2,rs1,rd)) = {
+    result : xlenbits = EXTZ(0b0);
+    foreach(i from 0 to xlen by 4) {
+        result[i+3..i] = xperm4_lookup(X(rs2)[i+3..i], X(rs1));
+    };
+    X(rd) = result;
+    RETIRE_SUCCESS
+}
+--
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbkx (<<#zbkx>>)
+|v1.0
+|已批准
+|===
+
+<<<
+[#insns-zip,reftext="位交错"]
+==== zip
+
+概要::
+将源寄存器的上半部分和下半部分交错到目标寄存器的奇位和偶位。
+
+助记符::
+zip _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x13, attr: ['OP-IMM']},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x1},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 0xf},
+{bits: 7, name: 0x4},
+]}
+....
+
+描述::
+此指令将源字的高半部分和低半部分聚集到目标字的奇/偶位位置。
+它是 <<insns-unzip-sc,unzip>> 指令的逆操作。
+此指令仅在 RV32 上可用。
+
+操作::
+[source,sail]
+--
+foreach (i from 0 to xlen/2-1) {
+  X(rd)[2*i] = X(rs1)[i]
+  X(rd)[2*i+1] = X(rs1)[i+xlen/2]
+}
+--
+
+.软件提示
+[NOTE, caption="SH" ]
+===============================================================
+此指令对在 32 位架构上实现 SHA3 密码学哈希函数很有用，
+因为它直接实现了用于加速 64 位旋转的位交错操作。
+===============================================================
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbkb (<<#zbkb>>) (RV32)
+|v1.0
+|已批准
+|===
 
 === 软件优化指南
 
-软件优化指南部分包含使用位操作指令优化常见算法的示例，如 strlen 和 strcmp 函数的实现。
-
 ==== strlen
 
-以下是使用 *orc.b* 指令优化的 strlen 函数实现示例：
+*orc.b* 指令允许在 XLEN 大小的数据块中高效检测 *NUL* 字节：
+
+* 在不包含任何 *NUL* 字节的块上，*orc.b* 的结果将是全一，
+* 在对 *orc.b* 的结果进行按位取反后，可以通过 *ctz*/*clz*（取决于数据的字节序）检测到第一个 *NUL* 字节之前的数据字节数（如果有的话）。
+
+下面是一个使用这些技术的完整 *strlen* 函数示例，它还演示了对非对齐/部分数据的使用：
 
 [source,asm]
 --
-# 利用 orc.b 指令的高效 strlen 实现
-# 通过并行处理多个字节来提高性能
+#include <sys/asm.h>
+
+    .text
+    .globl strlen
+    .type  strlen, @function
+strlen:
+    andi    a3, a0, (SZREG-1)   // offset
+    andi    a1, a0, -SZREG      // align pointer
+.Lprologue:
+    li      a4, SZREG
+    sub     a4, a4, a3          // XLEN - offset
+    slli    a3, a3, 3           // offset * 8
+    REG_L   a2, 0(a1)           // chunk
+    /*
+     * Shift the partial/unaligned chunk we loaded to remove the bytes
+     * from before the start of the string, adding NUL bytes at the end.
+     */
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    srl     a2, a2 ,a3          // chunk >> (offset * 8)
+#else
+    sll     a2, a2, a3
+#endif
+    orc.b   a2, a2
+    not     a2, a2
+    /*
+     * Non-NUL bytes in the string have been expanded to 0x00, while
+     * NUL bytes have become 0xff.  Search for the first set bit
+     * (corresponding to a NUL byte in the original chunk).
+     */
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    ctz     a2, a2
+#else
+    clz     a2, a2
+#endif
+    /*
+     * The first chunk is special: compare against the number of valid
+     * bytes in this chunk.
+     */
+    srli    a0, a2, 3
+    bgtu    a4, a0, .Ldone
+    addi    a3, a1, SZREG
+    li      a4, -1
+    .align 2
+    /*
+     * Our critical loop is 4 instructions and processes data in 4 byte
+     * or 8 byte chunks.
+     */
+.Lloop:
+    REG_L   a2, SZREG(a1)
+    addi    a1, a1, SZREG
+    orc.b   a2, a2
+    beq     a2, a4, .Lloop
+
+.Lepilogue:
+    not     a2, a2
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    ctz     a2, a2
+#else
+    clz     a2, a2
+#endif
+    sub     a1, a1, a3
+    add     a0, a0, a1
+    srli    a2, a2, 3
+    add     a0, a0, a2
+.Ldone:
+    ret
 --
 
 ==== strcmp
 
-以下是使用 *orc.b* 和 *rev8* 指令优化的 strcmp 函数实现示例：
-
 [source,asm]
 --
-# 利用位操作指令的高效 strcmp 实现
-# 使用 orc.b 检测空字节，rev8 进行字节序转换
---
+#include <sys/asm.h>
 
-// 注：完整的汇编代码实现请参考原英文文档
-// 这些示例展示了如何在实际应用中有效使用位操作指令
+  .text
+  .globl strcmp
+  .type  strcmp, @function
+strcmp:
+  or    a4, a0, a1
+  li    t2, -1
+  and   a4, a4, SZREG-1
+  bnez  a4, .Lsimpleloop
+
+  # Main loop for aligned strings
+.Lloop:
+  REG_L a2, 0(a0)
+  REG_L a3, 0(a1)
+  orc.b t0, a2
+  bne   t0, t2, .Lfoundnull
+  addi  a0, a0, SZREG
+  addi  a1, a1, SZREG
+  beq   a2, a3, .Lloop
+
+  # Words don't match, and no null byte in first word.
+  # Get bytes in big-endian order and compare.
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  rev8  a2, a2
+  rev8  a3, a3
+#endif
+  # Synthesize (a2 >= a3) ? 1 : -1 in a branchless sequence.
+  sltu a0, a2, a3
+  neg  a0, a0
+  ori  a0, a0, 1
+  ret
+
+.Lfoundnull:
+  # Found a null byte.
+  # If words don't match, fall back to simple loop.
+  bne   a2, a3, .Lsimpleloop
+
+  # Otherwise, strings are equal.
+  li    a0, 0
+  ret
+
+  # Simple loop for misaligned strings
+.Lsimpleloop:
+  lbu   a2, 0(a0)
+  lbu   a3, 0(a1)
+  addi  a0, a0, 1
+  addi  a1, a1, 1
+  bne   a2, a3, 1f
+  bnez  a2, .Lsimpleloop
+
+1:
+  sub   a0, a2, a3
+  ret
+
+.size   strcmp, .-strcmp
+--
+EOF < /dev/null
