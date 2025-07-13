@@ -421,8 +421,8 @@ RISC-V 项目的一个目标是将其用作稳定的软件开发目标。为此�
 |0x003|读写|fcsr|浮点控制和状态寄存器（`frm` + `fflags`）。
 4+^|计数器和计时器
 |0xC00|只读|cycle|RDCYCLE 指令的周期计数器。
-|0x001|只读|time|RDTIME 指令的计时器。
-|0x002|只读|instret|RDINSTRET 指令的已执行指令计数器。
+|0xC01|只读|time|RDTIME 指令的计时器。
+|0xC02|只读|instret|RDINSTRET 指令的已执行指令计数器。
 |0xC80|只读|cycleh|`cycle` 的高 32 位，仅 RV32I。
 |0xC81|只读|timeh|`time` 的高 32 位，仅 RV32I。
 |0xC82|只读|instreth|`instret` 的高 32 位，仅 RV32I。
