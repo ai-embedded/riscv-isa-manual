@@ -2,7 +2,7 @@
 
 本附录提供了一个非规范性示例，以帮助解释编译器如何充分利用分数 LMUL 功能。
 
-考虑以下（ admittedly contrived）用 C 编写的循环：
+考虑以下（确实人为设计的）用 C 编写的循环：
 
 ----
 void add_ref(long N,

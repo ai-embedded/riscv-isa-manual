@@ -537,3 +537,305 @@ stack_switch:
 当 supervisor 创建新的影子栈时，它需要在该栈的最高地址处存储一个检查点。这使得可以使用本注释中概述的过程切换影子栈指针。
 `SSAMOSWAP.W/D` 指令可用于存储此检查点。当 `SSAMOSWAP.W/D` 操作的内存位置的旧值不需要时，`rd` 可以设置为 `x0`。
 ====
+
+[NOTE]
+====
+在两个栈上存储返回地址保持了调用栈布局和ABI，同时也允许检测常规栈上返回地址的损坏。使用影子栈的非叶函数的序言和尾声如下：
+
+[listing]
+----
+    function_entry:
+        addi sp,sp,-8  # 将链接寄存器 x1
+        sd x1,(sp)     # 推送到常规栈
+        sspush x1      # 将链接寄存器 x1 推送到影子栈
+         :
+        ld x1,(sp)     # 从常规栈弹出链接寄存器 x1
+        addi sp,sp,8
+        sspopchk x1    # 如果 x1 不等于影子
+                       # 返回地址则故障
+        ret
+----
+
+此示例说明了使用 `x1` 寄存器作为链接寄存器。或者，`x5` 寄存器也可以用作链接寄存器。
+
+叶函数（本身不进行函数调用的函数）不需要溢出链接寄存器。因此，在叶函数执行期间，返回值可以保存在链接寄存器本身中。
+====
+
+`C.SSPOPCHK` 和 `SSPOPCHK` 指令执行与现有加载指令相同的加载操作，不同之处在于基址隐式为 `ssp`，宽度隐式为 `XLEN`。
+
+`SSPOPCHK` 和 `C.SSPOPCHK` 指令的操作如下：
+
+.`SSPOPCHK` 和 `C.SSPOPCHK` 操作
+[listing]
+----
+if (xSSE == 1)
+    temp = mem[ssp]            # 从 ssp 中的地址加载 temp 并
+    if temp != X(src)          # 将 temp 与 src 中的值进行比较，并
+                               # 如果它们在位级不相等则
+                               # 引发软件检查异常。
+                               # 只有 x1 和 x5 可以用作 src
+       raise software-check exception
+    else
+       ssp = ssp + (XLEN/8)    # 将 ssp 增加 XLEN/8
+    endif
+endif
+----
+
+如果从 `ssp` 中的地址加载的值与 `rs1` 中的值不匹配，则引发软件检查异常（原因=18），`__x__tval` 设置为"影子栈故障（代码=3）"。由 `SSPOPCHK`/`C.SSPOPCHK` 引起的软件检查异常的优先级低于加载/存储/AMO访问故障异常。
+
+只有当从影子栈的加载成功完成且未引发软件检查异常时，`SSPOPCHK` 和 `C.SSPOPCHK` 才会增加 `ssp`。
+
+<<<
+
+[NOTE]
+====
+当ABI使用 `x1` 作为链接寄存器时，使用压缩指令 `C.SSPUSH x1` 推送到影子栈是最高效的，因为链接寄存器可以在不需要在函数序言中进行寄存器到寄存器移动的情况下推送。要使用压缩指令 `C.SSPOPCHK x5`，函数应该将返回地址从常规栈弹出到替代链接寄存器 `x5` 中，并使用 `C.SSPOPCHK x5` 将返回地址与存储在影子栈上的影子副本进行比较。然后函数使用 `C.JR x5` 跳转到返回地址。
+
+[listing]
+----
+    function_entry:
+        c.addi sp,sp,-8  # 将链接寄存器 x1
+        c.sd x1,(sp)     # 推送到常规栈
+        c.sspush x1      # 将链接寄存器 x1 推送到影子栈
+         :
+        c.ld x5,(sp)     # 从常规栈弹出链接寄存器 x5
+        c.addi sp,sp,8
+        c.sspopchk x5    # 如果 x5 不等于影子返回地址则故障
+        c.jr x5
+----
+
+====
+
+[NOTE]
+====
+存储到加载转发是高性能处理器实现采用的常见技术。Zicfiss实现可能阻止从非影子栈存储到 `SSPOPCHK` 或 `C.SSPOPCHK` 指令的转发。如果对映射为影子栈的页面进行非影子栈存储，则会引起故障。但是，这种确定可能延迟到检查PTE之后，因此可能用于瞬时地将此类存储的数据转发到 `SSPOPCHK` 或 `C.SSPOPCHK`。
+====
+
+<<<
+
+[[SSP_READ]]
+==== 将 `ssp` 读取到寄存器
+
+提供了 `SSRDP` 指令以将 `ssp` 的内容移动到目标寄存器。
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  7, name: 'opcode', attr:'SYSTEM'},
+  {bits:  5, name: 'rd', attr:['dst']},
+  {bits:  3, name: 'funct3', attr:['100']},
+  {bits:  5, name: '00000'},
+  {bits: 12, name: '110011011100', attr:['SSRDP']},
+], config:{lanes: 1, hspace:1024}}
+....
+
+`SSRDP` 不支持将 _rd_ 编码为 `x0`。
+
+`SSRDP` 指令的操作如下：
+
+.`SSRDP` 操作
+[listing]
+----
+if (xSSE == 1)
+    X(dst) = ssp
+else
+    X(dst) = 0
+endif
+----
+
+[NOTE]
+====
+当使用Zimop的扩展未实现或未激活时，Zimop向 `rd` 写入0的属性可用于确定Zicfiss扩展是否激活。例如，展开影子栈的函数可以通过动态检测Zicfiss扩展是否激活来跳过展开操作。
+
+可以使用如下示例序列：
+
+[listing]
+    ssrdp t0                      # 将 ssp 移动到 t0
+    beqz t0, zicfiss_not_active   # 按约定，零不是有效的影子栈
+                                  # 指针
+    # Zicfiss 激活
+    :
+    :
+zicfiss_not_active:
+
+为了协助使用此类代码序列，操作系统和运行时不得将影子栈定位在地址0。
+====
+
+<<<
+
+[NOTE]
+====
+在栈上执行的常见操作是展开它们以支持像 `setjmp`/`longjmp`、C++异常处理等构造。使用影子栈的程序除了用于存储数据的栈外，还必须展开影子栈。展开函数必须验证它不会意外地展开超过影子栈的边界。影子栈预期在每端使用保护页面进行边界限制。栈的保护页面是拥有该栈的进程无法访问的页面。为了检测展开是否超过影子栈的边界，展开可以以最大4 KiB的增量进行，测试 `ssp` 是否仍指向影子栈页面或已展开到保护页面。以下示例说明了使用影子栈指令展开影子栈。此示例假设 `setjmp` 函数本身不推送到影子栈（作为叶函数，它不需要这样做）。
+
+[listing]
+setjmp() {
+    :
+    :
+    // 读取并保存影子栈指针到 jmp_buf
+    asm("ssrdp %0" : "=r"(cur_ssp):);
+    jmp_buf->saved_ssp = cur_ssp;
+    :
+    :
+}
+longjmp() {
+    :
+    // 读取当前影子栈指针并
+    // 计算要展开的调用帧数
+    asm("ssrdp %0" : "=r"(cur_ssp):);
+    // 如果后向边CFI未激活则跳过展开
+    asm("beqz %0, back_cfi_not_active" : "=r"(cur_ssp):);
+    // 在循环中展开帧
+    while ( jmp_buf->saved_ssp > cur_ssp ) {
+        // 一次最多前进4K以避免
+        // 展开超过影子栈的边界
+        cur_ssp = ( (jmp_buf->saved_ssp - cur_ssp) >= 4096 ) ?
+                  (cur_ssp + 4096) : jmp_buf->saved_ssp;
+        asm("csrw ssp, %0" : :  "r" (cur_ssp));
+        // 测试是否展开超过影子栈边界
+        asm("sspush x5");
+        asm("sspopchk x5");
+    }
+back_cfi_not_active:
+    :
+}
+====
+
+<<<
+
+[[SSAMOSWAP]]
+==== 从影子栈位置进行原子交换
+
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  7, name: 'opcode', attr:'AMO'},
+  {bits:  5, name: 'rd', attr:'dest'},
+  {bits:  3, name: 'funct3', attr:['010', '011']},
+  {bits:  5, name: 'rs1', attr:'addr'},
+  {bits:  5, name: 'rs2', attr:'src'},
+  {bits:  1, name: 'rl'},
+  {bits:  1, name: 'aq'},
+  {bits:  5, name: '01001', attr:['SSAMOSWAP.W', 'SSAMOSWAP.D']},
+], config:{lanes: 1, hspace:1024}}
+....
+
+对于RV32，`SSAMOSWAP.W` 原子地从 `rs1` 中影子栈位置的地址加载32位数据值，将加载的值放入寄存器 `rd`，并将 `rs2` 中保存的32位值存储到 `rs1` 中的原始地址。`SSAMOSWAP.D`（仅RV64）与 `SSAMOSWAP.W` 类似，但操作64位数据值。
+
+.RV32的 `SSAMOSWAP.W` 和 `SSAMOSWAP.D`（仅RV64）操作
+[listing]
+----
+  if privilege_mode != M && menvcfg.SSE == 0
+      raise illegal-instruction exception
+  else if S-mode not implemented
+      raise illegal-instruction exception
+  else if privilege_mode == U && senvcfg.SSE == 0
+      raise illegal-instruction exception
+  else if privilege_mode == VS && henvcfg.SSE == 0
+      raise virtual-instruction  exception
+  else if privilege_mode == VU && senvcfg.SSE == 0
+      raise virtual-instruction  exception
+  else
+      X(rd) = mem[X(rs1)]
+      mem[X(rs1)] = X(rs2)
+  endif
+----
+
+对于RV64，`SSAMOSWAP.W` 原子地从 `rs1` 中影子栈位置的地址加载32位数据值，对加载的值进行符号扩展并放入 `rd`，并将 `rs2` 中保存的值的低32位存储到 `rs1` 中的原始地址。
+
+.RV64的 `SSAMOSWAP.W`
+[listing]
+----
+  if privilege_mode != M && menvcfg.SSE == 0
+      raise illegal-instruction exception
+  else if S-mode not implemented
+      raise illegal-instruction exception
+  else if privilege_mode == U && senvcfg.SSE == 0
+      raise illegal-instruction exception
+  else if privilege_mode == VS && henvcfg.SSE == 0
+      raise virtual-instruction  exception
+  else if privilege_mode == VU && senvcfg.SSE == 0
+      raise virtual-instruction  exception
+  else
+      temp[31:0] = mem[X(rs1)]
+      X(rd) = SignExtend(temp[31:0])
+      mem[X(rs1)] = X(rs2)[31:0]
+  endif
+----
+
+与A扩展中的AMO一样，`SSAMOSWAP.W/D` 要求 `rs1` 中保存的地址自然对齐到操作数的大小（即，__双字__ 的八字节对齐，__字__ 的四字节对齐）。如果地址不是自然对齐的，则适用相同的异常选项。
+
+与A扩展中的AMO一样，`SSAMOSWAP.W/D` 可选地提供释放一致性语义，使用 `aq` 和 `rl` 位来帮助实现多处理器同步。如果 `aq=1`，则 `SSAMOSWAP.W/D` 操作具有获取语义；如果 `rl=1`，则具有释放语义。
+
+[NOTE]
+====
+栈切换是用户程序和supervisor程序中的常见操作。执行栈切换时，当前活动栈的栈指针保存到上下文数据结构中，通过从上下文数据结构加载新栈指针使新栈变为活动状态。
+
+当程序激活影子栈时，程序需要额外切换影子栈指针。如果指向已停用影子栈顶部的指针保存在上下文数据结构中，则它可能容易受到内存损坏漏洞的影响。为了保护指针值，程序可以将其存储在已停用影子栈本身的顶部，从而创建一个检查点。合法检查点定义为保存值 `X` 的检查点，其中 `X` 是检查点在影子栈上定位的地址。
+====
+
+[NOTE]
+====
+从新影子栈恢复影子栈指针并在旧影子栈上保存旧影子栈指针的示例序列如下：
+
+[listing]
+----
+# a0 保存指向要切换到的新影子栈顶部的指针
+stack_switch:
+   ssrdp ra
+   beqz ra, 2f                    # 如果Zicfiss未激活则跳过
+   ssamoswap.d ra, x0,  (a0)      # ra=*[a0] 且 *[a0]=0
+   beq         ra, a0,  1f        # [a0] 必须 == [ra]
+   unimp                          # 否则崩溃
+1: addi        ra, ra,  XLEN/8    # 弹出检查点
+   csrrw       ra, ssp, ra        # 交换ssp：ra=ssp，ssp=ra
+   addi        ra, ra,  -(XLEN/8) # 检查点 = "旧 ssp - XLEN/8"
+   ssamoswap.d x0, ra,  (ra)      # 在"旧 ssp - XLEN/8"处保存检查点
+2:
+----
+
+此序列使用 `ra` 寄存器。如果执行此序列的特权模式可以被中断，则陷阱处理程序应将 `ra` 保存到影子栈本身。在那里，它受到保护，免受篡改，并且可以在从陷阱返回之前恢复。
+
+当supervisor创建新的影子栈时，它需要在该栈的最高地址处存储一个检查点。这使得可以使用本注释中概述的过程切换影子栈指针。`SSAMOSWAP.W/D` 指令可用于存储此检查点。当 `SSAMOSWAP.W/D` 操作的内存位置的旧值不需要时，`rd` 可以设置为 `x0`。
+====
+
+=== CFI 安全性分析
+
+==== 攻击防护能力
+
+* **ROP攻击防护**：通过影子栈机制防止返回地址篡改
+* **JOP/COP攻击防护**：通过着陆垫指令限制间接跳转目标
+* **控制流劫持防护**：结合前向和后向边保护提供完整防护
+
+==== 安全强度评估
+
+* **完整性保证**：硬件级别的控制流验证
+* **篡改检测**：自动检测控制流完整性违规
+* **攻击面缩减**：显著减少可利用的代码小工具数量
+
+=== 性能影响分析
+
+==== 执行开销
+
+* **指令开销**：LPAD指令和影子栈操作的额外执行成本
+* **内存开销**：影子栈占用的额外内存空间
+* **缓存影响**：CFI操作对指令和数据缓存的影响
+
+==== 优化策略
+
+* **编译器优化**：智能的LPAD指令放置策略
+* **硬件加速**：专用硬件支持减少CFI操作延迟
+* **配置调优**：根据安全需求调整CFI保护级别
+
+=== 实施最佳实践
+
+==== 编译器集成
+
+* **工具链支持**：完整的编译器、汇编器、链接器CFI支持
+* **调试信息**：保持CFI相关的调试信息完整性
+* **链接时优化**：在链接阶段优化CFI指令布局
+
+==== 运行时管理
+
+* **动态加载**：支持动态加载库的CFI保护
+* **异常处理**：CFI异常的适当处理和报告机制
+* **性能监控**：CFI相关性能指标的监控和调优

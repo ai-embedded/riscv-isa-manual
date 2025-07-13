@@ -584,3 +584,972 @@ VMID 位的数量是未指定的，可以为零。已实现的 VMID 位的数量
 ==== 虚拟 Supervisor 状态 (`vsstatus`) 寄存器
 
 `vsstatus` 寄存器是一个 VSXLEN 位读/写寄存器，它是 VS 模式的 supervisor 寄存器 `sstatus` 的版本，格式如 VSXLEN=32 时的 <<vsstatusreg-rv32>> 和 VSXLEN=64 时的 <<vsstatusreg>> 所示。当 V=1 时，`vsstatus` 替代通常的 `sstatus`，因此通常读取或修改 `sstatus` 的指令实际上会访问 `vsstatus`。
+
+[[vsstatusreg-rv32]]
+.VSXLEN=32 时的虚拟 supervisor 状态 (`vsstatus`) 寄存器。
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  1, name: 'WPRI'},
+  {bits:  1, name: 'SIE'},
+  {bits:  3, name: 'WPRI'},
+  {bits:  1, name: 'SPIE'},
+  {bits:  1, name: 'UBE'},
+  {bits:  1, name: 'WPRI'},
+  {bits:  1, name: 'SPP'},
+  {bits:  2, name: 'VS[1:0]'},
+  {bits:  2, name: 'WPRI'},
+  {bits:  2, name: 'FS[1:0]'},
+  {bits:  2, name: 'XS[1:0]'},
+  {bits:  1, name: 'WPRI'},
+  {bits:  1, name: 'SUM'},
+  {bits:  1, name: 'MXR'},
+  {bits:  3, name: 'WPRI'},
+  {bits:  1, name: 'SPELP'},
+  {bits:  1, name: 'SDT'},
+  {bits:  6, name: 'WPRI'},
+  {bits:  1, name: 'SD'},
+], config:{lanes: 2, hspace:1024}}
+....
+
+[[vsstatusreg]]
+.VSXLEN=64 时的虚拟 supervisor 状态 (`vsstatus`) 寄存器。
+[wavedrom, ,svg]
+....
+{reg: [
+  {bits:  1, name: 'WPRI'},
+  {bits:  1, name: 'SIE'},
+  {bits:  3, name: 'WPRI'},
+  {bits:  1, name: 'SPIE'},
+  {bits:  1, name: 'UBE'},
+  {bits:  1, name: 'WPRI'},
+  {bits:  1, name: 'SPP'},
+  {bits:  2, name: 'VS[1:0]'},
+  {bits:  2, name: 'WPRI'},
+  {bits:  2, name: 'FS[1:0]'},
+  {bits:  2, name: 'XS[1:0]'},
+  {bits:  1, name: 'WPRI'},
+  {bits:  1, name: 'SUM'},
+  {bits:  1, name: 'MXR'},
+  {bits:  3, name: 'WPRI'},
+  {bits:  1, name: 'SPELP'},
+  {bits:  1, name: 'SDT'},
+  {bits:  7, name: 'WPRI'},
+  {bits:  2, name: 'UXL[1:0]'},
+  {bits: 29, name: 'WPRI'},
+  {bits:  1, name: 'SD'},
+], config:{lanes: 4, hspace:1024}}
+....
+
+UXL 字段控制 VU 模式的有效 XLEN，该值可能与 VS 模式的 XLEN（VSXLEN）不同。当 VSXLEN=32 时，UXL 字段不存在，VU 模式 XLEN=32。当 VSXLEN=64 时，UXL 是一个 *WARL* 字段，其编码与 `misa` 的 MXL 字段相同，如 <<misabase>> 所示。特别是，实现可以使 UXL 成为 `hstatus` 字段 VSXL 的只读副本，强制 VU 模式 XLEN=VSXLEN。
+
+如果 VSXLEN 从 32 更改为更宽的宽度，并且如果字段 UXL 不限于单个值，则它将获得对应于不超过新 VSXLEN 的最宽支持宽度的值。
+
+当 V=1 时，`vsstatus`.FS 和 HS 级 `sstatus`.FS 都生效。当任一字段为 0（关闭）时，尝试执行浮点指令会引发非法指令异常。当 V=1 时修改浮点状态会导致两个字段都设置为 3（脏状态）。
+
+[NOTE]
+====
+为了让管理程序从扩展上下文状态中受益，它必须在 HS 级 `sstatus` 中拥有自己的副本，独立于在 VS 模式下运行的客户操作系统进行维护。虽然扩展上下文状态的版本显然必须存在于 VS 模式的 `vsstatus` 中，但管理程序不能依赖于此版本得到正确维护，因为 VS 级软件可以任意更改 `vsstatus`.FS。如果 HS 级 `sstatus`.FS 在 V=1 时没有独立活动并与 `vsstatus`.FS 并行由硬件维护，管理程序在虚拟机之间进行上下文切换时将始终被迫保守地交换所有浮点状态。
+====
+
+同样，当 V=1 时，`vsstatus`.VS 和 HS 级 `sstatus`.VS 都生效。当任一字段为 0（关闭）时，尝试执行向量指令会引发非法指令异常。当 V=1 时修改向量状态会导致两个字段都设置为 3（脏状态）。
+
+只读字段 SD 和 XS 总结了 VS 模式可见的扩展上下文状态。例如，HS 级 `sstatus`.FS 的值不影响 `vsstatus`.SD。
+
+实现可以使字段 UBE 成为 `hstatus`.VSBE 的只读副本。
+
+当 V=0 时，`vsstatus` 不直接影响机器的行为，除非使用虚拟机加载/存储（HLV、HLVX 或 HSV）或 `mstatus` 寄存器中的 MPRV 功能来执行 _就像_ V=1 的加载或存储。
+
+Zicfilp 扩展添加了保存先前 `ELP` 的 `SPELP` 字段，并按 <<ZICFILP_FORWARD_TRAPS>> 中指定的方式更新。`SPELP` 字段编码如下：
+
+* 0 - `NO_LP_EXPECTED` - 不期望着陆垫指令。
+* 1 - `LP_EXPECTED` - 期望着陆垫指令。
+
+Ssdbltrp 扩展添加了 S 模式禁用陷阱（`SDT`）字段扩展以解决 VS 模式中的双重陷阱（参见 <<supv-double-trap>>）。
+
+==== 虚拟 Supervisor 中断 (`vsip` 和 `vsie`) 寄存器
+
+`vsip` 和 `vsie` 寄存器是 VSXLEN 位读/写寄存器，它们是 VS 模式的 supervisor CSR `sip` 和 `sie` 的版本，格式分别如 <<vsipreg>> 和 <<vsiereg>> 所示。当 V=1 时，`vsip` 和 `vsie` 替代通常的 `sip` 和 `sie`，因此通常读取或修改 `sip`/`sie` 的指令实际上会访问 `vsip`/`vsie`。但是，当 V=1 时，指向 HS 级的中断继续在 HS 级 `sip` 寄存器中指示，而不是在 `vsip` 中。
+
+[[vsipreg]]
+.虚拟 supervisor 中断待处理寄存器 (`vsip`)。
+include::images/bytefield/vsipreg.edn[]
+
+[[vsiereg]]
+.虚拟 supervisor 中断使能寄存器 (`vsie`)。
+include::images/bytefield/vsiereg.edn[]
+
+寄存器 `vsip` 和 `vsie` 的标准部分（位 15:0）格式分别如 <<vsipreg-standard>> 和 <<vsiereg-standard>> 所示。
+
+[[vsipreg-standard]]
+.`vsip` 的标准部分（位 15:0）。
+include::images/bytefield/vsipreg-standard.edn[]
+
+[[vsiereg-standard]]
+.`vsie` 的标准部分（位 15:0）。
+include::images/bytefield/vsiereg-standard.edn[]
+
+扩展 Shlcofideleg 支持将 LCOFI 中断委托给 VS 模式。如果实现了 Shlcofideleg 扩展，`hideleg` 位 13 可写；否则，它为只读零。当 `hideleg` 的位 13 为零时，`vsip`.LCOFIP 和 `vsie`.LCOFIE 为只读零。否则，`vsip`.LCOFIP 和 `vsie`.LCOFIE 是 `sip`.LCOFIP 和 `sie`.LCOFIE 的别名。
+
+当 `hideleg` 的位 10 为零时，`vsip`.SEIP 和 `vsie`.SEIE 为只读零。否则，`vsip`.SEIP 和 `vsie`.SEIE 是 `hip`.VSEIP 和 `hie`.VSEIE 的别名。
+
+当 `hideleg` 的位 6 为零时，`vsip`.STIP 和 `vsie`.STIE 为只读零。否则，`vsip`.STIP 和 `vsie`.STIE 是 `hip`.VSTIP 和 `hie`.VSTIE 的别名。
+
+当 `hideleg` 的位 2 为零时，`vsip`.SSIP 和 `vsie`.SSIE 为只读零。否则，`vsip`.SSIP 和 `vsie`.SSIE 是 `hip`.VSSIP 和 `hie`.VSSIE 的别名。
+
+==== 虚拟 Supervisor 陷阱向量基地址 (`vstvec`) 寄存器
+
+`vstvec` 寄存器是一个 VSXLEN 位读/写寄存器，它是 VS 模式的 supervisor 寄存器 `stvec` 的版本，格式如 <<vstvecreg>> 所示。当 V=1 时，`vstvec` 替代通常的 `stvec`，因此通常读取或修改 `stvec` 的指令实际上会访问 `vstvec`。当 V=0 时，`vstvec` 不直接影响机器的行为。
+
+[[vstvecreg]]
+.虚拟 supervisor 陷阱向量基地址寄存器 `vstvec`。
+include::images/bytefield/vstvecreg.edn[]
+
+==== 虚拟 Supervisor 暂存 (`vsscratch`) 寄存器
+
+`vsscratch` 寄存器是一个 VSXLEN 位读/写寄存器，它是 VS 模式的 supervisor 寄存器 `sscratch` 的版本，格式如 <<vsscratchreg>> 所示。当 V=1 时，`vsscratch` 替代通常的 `sscratch`，因此通常读取或修改 `sscratch` 的指令实际上会访问 `vsscratch`。`vsscratch` 的内容从不直接影响机器的行为。
+
+[[vsscratchreg]]
+.虚拟 supervisor 暂存寄存器 `vsscratch`。
+include::images/bytefield/vsscratchreg.edn[]
+
+==== 虚拟 Supervisor 异常程序计数器 (`vsepc`) 寄存器
+
+`vsepc` 寄存器是一个 VSXLEN 位读/写寄存器，它是 VS 模式的 supervisor 寄存器 `sepc` 的版本，格式如 <<vsepcreg>> 所示。当 V=1 时，`vsepc` 替代通常的 `sepc`，因此通常读取或修改 `sepc` 的指令实际上会访问 `vsepc`。当 V=0 时，`vsepc` 不直接影响机器的行为。
+
+`vsepc` 是一个 *WARL* 寄存器，必须能够容纳与 `sepc` 可以容纳的相同值集。
+
+[[vsepcreg]]
+.虚拟 supervisor 异常程序计数器 (`vsepc`)。
+include::images/bytefield/vsepcreg.edn[]
+
+==== 虚拟 Supervisor 原因 (`vscause`) 寄存器
+
+`vscause` 寄存器是一个 VSXLEN 位读/写寄存器，它是 VS 模式的 supervisor 寄存器 `scause` 的版本，格式如 <<vscausereg>> 所示。当 V=1 时，`vscause` 替代通常的 `scause`，因此通常读取或修改 `scause` 的指令实际上会访问 `vscause`。当 V=0 时，`vscause` 不直接影响机器的行为。
+
+`vscause` 是一个 *WLRL* 寄存器，必须能够容纳与 `scause` 可以容纳的相同值集。
+
+[[vscausereg]]
+.虚拟 supervisor 原因寄存器 (`vscause`)。
+include::images/bytefield/vscausereg.edn[]
+
+==== 虚拟 Supervisor 陷阱值 (`vstval`) 寄存器
+
+`vstval` 寄存器是一个 VSXLEN 位读/写寄存器，它是 VS 模式的 supervisor 寄存器 `stval` 的版本，格式如 <<vstvalreg>> 所示。当 V=1 时，`vstval` 替代通常的 `stval`，因此通常读取或修改 `stval` 的指令实际上会访问 `vstval`。当 V=0 时，`vstval` 不直接影响机器的行为。
+
+`vstval` 是一个 *WARL* 寄存器，必须能够容纳与 `stval` 可以容纳的相同值集。
+
+[[vstvalreg]]
+.虚拟 supervisor 陷阱值寄存器 (`vstval`)。
+include::images/bytefield/vstvalreg.edn[]
+
+==== 虚拟 Supervisor 地址转换和保护 (`vsatp`) 寄存器
+
+`vsatp` 寄存器是一个 VSXLEN 位读/写寄存器，它是 VS 模式的 supervisor 寄存器 `satp` 的版本，格式如 VSXLEN=32 时的 <<rv32vsatpreg>> 和 VSXLEN=64 时的 <<rv64vsatpreg>> 所示。当 V=1 时，`vsatp` 替代通常的 `satp`，因此通常读取或修改 `satp` 的指令实际上会访问 `vsatp`。`vsatp` 控制 VS 阶段地址转换，即客户虚拟地址两阶段转换的第一阶段（参见 <<two-stage-translation>>）。
+
+[[rv32vsatpreg]]
+.VSXLEN=32 时的虚拟 supervisor 地址转换和保护 `vsatp` 寄存器。
+include::images/bytefield/rv32vsatpreg.edn[]
+
+[[rv64vsatpreg]]
+.VSXLEN=64 时的虚拟 supervisor 地址转换和保护 `vsatp` 寄存器。
+include::images/bytefield/rv64vsatpreg.edn[]
+
+对于地址转换算法的目的，`vsatp` 寄存器被认为是 _活动的_，_除非_ 有效特权模式是 U 且 `hstatus`.HU=0。但是，即使当 `vsatp` 活动时，VS 阶段页表条目的 A 位也不得因投机执行而设置，除非有效特权模式是 VS 或 VU。
+
+[NOTE]
+====
+特别是，被误预测的虚拟机加载/存储（HLV、HLVX 或 HSV）指令不得导致 VS 阶段 A 位被设置。
+====
+
+当 V=0 时，对具有不受支持 MODE 值的 `vsatp` 的写入要么像对 `satp` 那样被忽略，要么 `vsatp` 的字段以正常方式作为 *WARL* 处理。但是，当 V=1 时，对具有不受支持 MODE 值的 `satp` 的写入 _被_ 忽略，并且不会对 `vsatp` 进行写入。
+
+当 V=0 时，`vsatp` 不直接影响机器的行为，除非使用虚拟机加载/存储（HLV、HLVX 或 HSV）或 `mstatus` 寄存器中的 MPRV 功能来执行 _就像_ V=1 的加载或存储。
+
+=== 管理程序指令
+
+管理程序扩展添加了虚拟机加载和存储指令以及两个特权栅栏指令。
+
+==== 管理程序虚拟机加载和存储指令
+
+include::images/wavedrom/hypv-virt-load-and-store.edn[]
+
+管理程序虚拟机加载和存储指令仅在 M 模式或 HS 模式下有效，或在 `hstatus`.HU=1 时在 U 模式下有效。每个指令执行具有 VS 或 VU 有效特权模式的显式内存访问。当 `hstatus`.SPVP=0 时，显式内存访问的有效特权模式为 VU，当 `hstatus`.SPVP=1 时为 VS。与 VS 模式和 VU 模式通常一样，应用两阶段地址转换，并忽略 HS 级 `sstatus`.SUM。HS 级 `sstatus`.MXR 使仅执行页面可被显式加载读取，适用于地址转换的两个阶段（VS 阶段和 G 阶段），而 `vsstatus`.MXR 仅影响第一个转换阶段（VS 阶段）。
+
+对于每个 RV32I 或 RV64I 加载指令 LB、LBU、LH、LHU、LW、LWU 和 LD，都有相应的虚拟机加载指令：HLV.B、HLV.BU、HLV.H、HLV.HU、HLV.W、HLV.WU 和 HLV.D。对于每个 RV32I 或 RV64I 存储指令 SB、SH、SW 和 SD，都有相应的虚拟机存储指令：HSV.B、HSV.H、HSV.W 和 HSV.D。指令 HLV.WU、HLV.D 和 HSV.D 当然对 RV32 无效。
+
+指令 HLVX.HU 和 HLVX.WU 与 HLV.HU 和 HLV.WU 相同，除了在地址转换期间 _执行_ 权限取代 _读取_ 权限。也就是说，在地址转换的两个阶段中，被读取的内存必须是可执行的，但不需要读取权限。对于地址转换产生的 supervisor 物理地址，supervisor 物理内存属性必须授予 _执行_ 和 _读取_ 权限。（_supervisor 物理内存属性_ 是机器的物理内存属性，经过 supervisor 级别的物理内存保护 <<pmp>> 修改。）
+
+[NOTE]
+====
+HLVX 无法覆盖机器级物理内存保护（PMP），因此尝试读取 PMP 指定为仅执行的内存仍会导致访问故障异常。
+
+尽管 HLVX 指令的显式内存访问需要执行权限，但它们仍会引发与其他加载指令相同的异常，而不是引发取指异常。
+====
+
+HLVX.WU 对 RV32 有效，尽管 LWU 和 HLV.WU 无效。（对于 RV32，HLVX.WU 可以被视为 HLV.W 的变体，因为对于 32 位值符号扩展是无关的。）
+
+当 V=1 时尝试执行虚拟机加载/存储指令（HLV、HLVX 或 HSV）会导致虚拟指令异常。当 `hstatus`.HU=0 时从 U 模式尝试执行这些指令中的任何一个会导致非法指令异常。
+
+[[hfence.vma]]
+==== 管理程序内存管理栅栏指令
+
+include::images/wavedrom/hypv-mm-fence.edn[]
+
+管理程序内存管理栅栏指令 HFENCE.VVMA 和 HFENCE.GVMA 执行类似于 SFENCE.VMA（<<sfence.vma>>）的功能，但应用于 CSR `vsatp` 控制的 VS 级内存管理数据结构（HFENCE.VVMA）或 CSR `hgatp` 控制的客户物理内存管理数据结构（HFENCE.GVMA）。指令 SFENCE.VMA 仅应用于当前 `satp` 控制的内存管理数据结构（当 V=0 时为 HS 级 `satp`，当 V=1 时为 `vsatp`）。
+
+HFENCE.VVMA 仅在 M 模式或 HS 模式下有效。其效果与临时进入 VS 模式并执行 SFENCE.VMA 非常相似。执行 HFENCE.VVMA 保证当前 hart 已经可见的任何先前存储都在该 hart 为以下指令执行的 VS 阶段地址转换的所有隐式读取之前排序：
+
+* 在 HFENCE.VVMA 之后的指令，以及
+* 当 `hgatp`.VMID 与 HFENCE.VVMA 执行时具有相同设置时执行的指令。
+
+当 `hgatp`.VMID 与 HFENCE.VVMA 执行时不同时，隐式读取不需要排序。如果操作数 __rs1__≠`x0`，它指定单个客户虚拟地址，如果操作数 __rs2__≠`x0`，它指定单个客户地址空间标识符（ASID）。
+
+[NOTE]
+====
+HFENCE.VVMA 指令仅应用于单个虚拟机，由 HFENCE.VVMA 执行时 `hgatp`.VMID 的设置标识。
+====
+
+当 __rs2__≠`x0` 时，_rs2_ 中保存的值的 XLEN-1:ASIDMAX 位保留供将来标准使用。在标准扩展定义其用法之前，软件应将它们置零，当前实现应忽略它们。此外，如果 ASIDLEN < ASIDMAX，实现应忽略 _rs2_ 中保存值的 ASIDMAX-1:ASIDLEN 位。
+
+[NOTE]
+====
+HFENCE.VVMA 的更简单实现可以忽略 _rs1_ 中的客户虚拟地址和 _rs2_ 中的客户 ASID 值，以及 `hgatp`.VMID，并始终对所有虚拟机的 VS 级内存管理执行全局栅栏，甚至对所有内存管理数据结构执行全局栅栏。
+====
+
+`mstatus`.TVM 和 `hstatus`.VTVM 都不会导致 HFENCE.VVMA 陷阱。
+
+HFENCE.GVMA 仅在 `mstatus`.TVM=0 时的 HS 模式下有效，或在 M 模式下有效（与 `mstatus`.TVM 无关）。执行 HFENCE.GVMA 指令保证当前 hart 已经可见的任何先前存储都在该 hart 为遵循 HFENCE.GVMA 的指令执行的 G 阶段地址转换的所有隐式读取之前排序。如果操作数 __rs1__≠`x0`，它指定单个客户物理地址，右移 2 位，如果操作数 __rs2__≠`x0`，它指定单个虚拟机标识符（VMID）。
+
+[NOTE]
+====
+从概念上讲，实现可能包含两个地址转换缓存：一个将客户虚拟地址映射到客户物理地址，另一个将客户物理地址映射到 supervisor 物理地址。HFENCE.GVMA 不需要刷新前一个缓存，但必须从后一个缓存中刷新与 HFENCE.GVMA 的地址和 VMID 参数匹配的条目。
+
+更常见的是，实现包含将客户虚拟地址直接映射到 supervisor 物理地址的地址转换缓存，消除了一级间接层。对于此类实现，其客户虚拟地址映射到与 HFENCE.GVMA 的地址和 VMID 参数匹配的客户物理地址的任何条目都必须被刷新。以这种方式选择性刷新条目需要用客户物理地址标记它们，这是昂贵的，因此一种常见技术是刷新与 HFENCE.GVMA 的 VMID 参数匹配的所有条目，而不管地址参数如何。
+
+***
+
+与在陷阱时写入 `htval` 的客户物理地址一样，在 _rs1_ 中指定的客户物理地址右移 2 位以适应比当前 XLEN 更宽的地址。
+====
+
+当 __rs2__≠`x0` 时，_rs2_ 中保存的值的 XLEN-1:VMIDMAX 位保留供将来标准使用。在标准扩展定义其用法之前，软件应将它们置零，当前实现应忽略它们。此外，如果 VMIDLEN < VMIDMAX，实现应忽略 _rs2_ 中保存值的 VMIDMAX-1:VMIDLEN 位。
+
+[NOTE]
+====
+HFENCE.GVMA 的更简单实现可以忽略 _rs1_ 中的客户物理地址和 _rs2_ 中的 VMID 值，并始终对所有虚拟机的客户物理内存管理执行全局栅栏，甚至对所有内存管理数据结构执行全局栅栏。
+====
+
+如果为给定 VMID 更改了 `hgatp`.MODE，则必须执行 _rs1_=`x0`（并且 _rs2_ 设置为 `x0` 或 VMID）的 HFENCE.GVMA 以将后续客户转换与 MODE 更改排序——即使旧 MODE 或新 MODE 是 Bare。
+
+当 V=1 时尝试执行 HFENCE.VVMA 或 HFENCE.GVMA 会导致虚拟指令异常，而在 U 模式下尝试执行相同操作会导致非法指令异常。当 `mstatus`.TVM=1 时在 HS 模式下尝试执行 HFENCE.GVMA 也会导致非法指令异常。
+
+=== 机器级 CSR
+
+管理程序扩展增强或修改机器 CSR `mstatus`、`mstatush`、`mideleg`、`mip` 和 `mie`，并添加 CSR `mtval2` 和 `mtinst`。
+
+==== 机器状态 (`mstatus` 和 `mstatush`) 寄存器
+
+管理程序扩展向机器级 `mstatus` 或 `mstatush` CSR 添加了两个字段 MPV 和 GVA，并修改了几个现有 `mstatus` 字段的行为。<<hypervisor-mstatus>> 显示了实现管理程序扩展且 MXLEN=64 时修改后的 `mstatus` 寄存器。当 MXLEN=32 时，管理程序扩展不向 `mstatus` 而是向 `mstatush` 添加 MPV 和 GVA。<<hypervisor-mstatush>> 显示了实现管理程序扩展且 MXLEN=32 时的 `mstatush` 寄存器。
+
+[[hypervisor-mstatus]]
+.实现管理程序扩展时 RV64 的机器状态 (`mstatus`) 寄存器。
+include::images/bytefield/hypv-mstatus.edn[]
+
+[[hypervisor-mstatush]]
+.实现管理程序扩展时 RV32 的额外机器状态 (`mstatush`) 寄存器。RV32 的 `mstatus` 格式保持不变。
+include::images/bytefield/hypv-mstatush.edn[]
+
+MPV 位（机器先前虚拟化模式）在每次陷阱进入 M 模式时由实现写入。就像 MPP 字段设置为陷阱时的（名义）特权模式一样，MPV 位设置为陷阱时虚拟化模式 V 的值。当执行 MRET 指令时，虚拟化模式 V 设置为 MPV，除非 MPP=3，在这种情况下 V 保持为 0。
+
+字段 GVA（客户虚拟地址）在每次陷阱进入 M 模式时由实现写入。对于任何将客户虚拟地址写入 `mtval` 的陷阱（断点、地址未对齐、访问故障、页故障或客户页故障），GVA 设置为 1。对于任何其他进入 M 模式的陷阱，GVA 设置为 0。
+
+`mstatus` 的 TSR 和 TVM 字段仅影响 HS 模式中的执行，不影响 VS 模式。TW 字段影响除 M 模式外的所有模式中的执行。
+
+设置 TVM=1 防止 HS 模式访问 `hgatp` 或执行 HFENCE.GVMA 或 HINVAL.GVMA，但对访问 `vsatp` 或指令 HFENCE.VVMA 或 HINVAL.VVMA 没有影响。
+
+[NOTE]
+====
+`mstatus` 中存在 TVM 是为了允许机器级软件修改由 supervisor 级操作系统管理的地址转换，通常是为了在操作系统控制的地址转换下方插入另一个地址转换阶段。TVM=1 启用的指令陷阱允许机器级占用 `satp` 和 `hgatp` 并替换 _影子页表_，将操作系统选择的页转换与 M 级的低级转换合并，而操作系统并不知情。M 级软件需要这种能力，不仅是为了在尚未支持的情况下模拟管理程序扩展，而且还为了模拟任何未来可能修改或添加地址转换阶段的 RISC-V 扩展，例如，可能为了改善对嵌套管理程序的支持，即在其他管理程序之上运行管理程序。
+
+但是，设置 TVM=1 不会对访问 `vsatp` 或指令 HFENCE.VVMA 或 HINVAL.VVMA，或在 VS 模式中采取的任何操作导致陷阱，因为 M 级软件不应该需要参与 VS 阶段地址转换。对于虚拟机，应该足够，并且很可能也更快，就是让 VS 阶段地址转换单独存在，并将所有其他转换阶段合并到由 `hgatp` 控制的 G 阶段影子页表中。这种假设确实对当前机器能够高效模拟的可能的未来 RISC-V 扩展带来了一些限制。
+====
+
+管理程序扩展改变了 `mstatus` 的修改特权字段 MPRV 的行为。当 MPRV=0 时，转换和保护表现正常。当 MPRV=1 时，显式内存访问被转换和保护，并应用字节序，就像当前虚拟化模式设置为 MPV，当前名义特权模式设置为 MPP 一样。<<h-mprv>> 列举了各种情况。
+
+[[h-mprv]]
+.MPRV 对显式内存访问的转换和保护的影响。
+[float="center",align="center",cols="^15,^10,^10,<70",options="header"]
+|===
+|MPRV |MPV |MPP |效果
+|0 |- |- |正常访问；应用当前特权模式。
+
+|1 |0 |0 |U 级访问，仅使用 HS 级转换和保护。
+
+|1 |0 |1 |HS 级访问，仅使用 HS 级转换和保护。
+
+|1 |- |3 |M 级访问，不进行转换。
+
+|1 |1 |0 |VU 级访问，使用两阶段转换和保护。HS 级 MXR 位使任何可执行页面可读。`vsstatus`.MXR 使在 VS 转换阶段标记为可执行的页面可读，但仅在客户物理转换阶段可读时才有效。
+
+|1 |1 |1 |VS 级访问，使用两阶段转换和保护。HS 级 MXR 位使任何可执行页面可读。`vsstatus`.MXR 使在 VS 转换阶段标记为可执行的页面可读，但仅在客户物理转换阶段可读时才有效。`vsstatus`.SUM 应用而不是 HS 级 SUM 位。
+|===
+
+MPRV 不影响虚拟机加载/存储指令 HLV、HLVX 和 HSV。这些指令的显式加载和存储始终表现得就像 V=1 且名义特权模式为 `hstatus`.SPVP，覆盖 MPRV。
+
+`mstatus` 寄存器是 HS 级 `sstatus` 寄存器的超集，但不是 `vsstatus` 的超集。
+
+==== 机器中断委托 (`mideleg`) 寄存器
+
+当实现管理程序扩展时，`mideleg` 的位 10、6 和 2（对应于标准 VS 级中断）都各自为只读一。此外，如果实现了任何客户外部中断（GEILEN 非零），`mideleg` 的位 12（对应于 supervisor 级客户外部中断）也是只读一。VS 级中断和客户外部中断始终被委托越过 M 模式到 HS 模式。
+
+对于 `mideleg` 中为零的位，`hideleg`、`hip` 和 `hie` 中的相应位为只读零。
+
+==== 机器中断 (`mip` 和 `mie`) 寄存器
+
+管理程序扩展为寄存器 `mip` 和 `mie` 提供了管理程序添加的中断的额外活动位。<<hypervisor-mipreg-standard>> 和 <<hypervisor-miereg-standard>> 显示了实现管理程序扩展时寄存器 `mip` 和 `mie` 的标准部分（位 15:0）。
+
+[[hypervisor-mipreg-standard]]
+.`mip` 的标准部分（位 15:0）。
+include::images/bytefield/hypv-mipreg-standard.edn[]
+
+[[hypervisor-miereg-standard]]
+.`mie` 的标准部分（位 15:0）。
+include::images/bytefield/hypv-miereg-standard.edn[]
+
+`mip` 中的位 SGEIP、VSEIP、VSTIP 和 VSSIP 是管理程序 CSR `hip` 中相同位的别名，而 `mie` 中的 SGEIE、VSEIE、VSTIE 和 VSSIE 是 `hie` 中相同位的别名。
+
+==== 机器第二陷阱值 (`mtval2`) 寄存器
+
+`mtval2` 寄存器是一个 MXLEN 位读/写寄存器，格式如 <<mtval2reg>> 所示。当陷阱进入 M 模式时，`mtval2` 与 `mtval` 一起写入额外的异常特定信息，以帮助软件处理陷阱。
+
+[[mtval2reg]]
+.机器第二陷阱值寄存器 (`mtval2`)。
+include::images/bytefield/mtval2reg.edn[]
+
+当客户页故障陷阱进入 M 模式时，`mtval2` 中写入零或故障的客户物理地址，右移 2 位。对于其他陷阱，`mtval2` 设置为零，但未来的标准或扩展可能会重新定义 `mtval2` 对其他陷阱的设置。
+
+如果客户页故障是由于第一阶段（VS 阶段）地址转换期间的隐式内存访问导致的，写入 `mtval2` 的客户物理地址是故障的隐式内存访问的地址。在 CSR `mtinst` 中提供了额外信息以消除此类情况的歧义性。
+
+否则，对于导致客户页故障的未对齐加载和存储，`mtval2` 中的非零客户物理地址对应于访问的故障部分，如 `mtval` 中的虚拟地址所指示的。对于具有可变长度指令的系统上的指令客户页故障，非零 `mtval2` 对应于指令的故障部分，如 `mtval` 中的虚拟地址所指示的。
+
+`mtval2` 是一个 *WARL* 寄存器，必须能够容纳零，并且可能只能容纳其他 2 位移位客户物理地址的任意子集（如果有）。
+
+Ssdbltrap 扩展（参见 <<ssdbltrp>>）需要实现 `mtval2` CSR。
+
+==== 机器陷阱指令 (`mtinst`) 寄存器
+
+`mtinst` 寄存器是一个 MXLEN 位读/写寄存器，格式如 <<mtinstreg>> 所示。当陷阱进入 M 模式时，`mtinst` 中写入一个值，如果非零，则提供有关陷阱指令的信息，以帮助软件处理陷阱。可能在陷阱时写入 `mtinst` 的值记录在 <<tinst-vals>> 中。
+
+[[mtinstreg]]
+.机器陷阱指令 (`mtinst`) 寄存器。
+include::images/bytefield/mtinstreg.edn[]
+
+`mtinst` 是一个 *WARL* 寄存器，只需要能够容纳实现可能在陷阱时自动写入其中的值。
+
+[[two-stage-translation]]
+=== 两阶段地址转换
+
+当前虚拟化模式 V 为 1 时，两阶段地址转换和保护生效。对于任何虚拟内存访问，原始虚拟地址在第一阶段由 VS 级地址转换转换，由 `vsatp` 寄存器控制，转换为 _客户物理地址_。然后客户物理地址在第二阶段由客户物理地址转换转换，由 `hgatp` 寄存器控制，转换为 supervisor 物理地址。这两个阶段也被称为 VS 阶段和 G 阶段转换。尽管当 V=1 时没有禁用两阶段地址转换的选项，但可以通过将相应的 `vsatp` 或 `hgatp` 寄存器清零来有效地禁用任一阶段的转换。
+
+`vsstatus` 字段 MXR（使仅执行页面可被显式加载读取）仅覆盖 VS 阶段页面保护。在 VS 级设置 MXR 不会覆盖客户物理页面保护。但是，在 HS 级设置 MXR 会覆盖 VS 阶段和 G 阶段的仅执行权限。
+
+当 V=1 时，通常会绕过地址转换的内存访问仅受 G 阶段地址转换的影响。这包括为支持 VS 阶段地址转换而进行的内存访问，例如读写 VS 级页表。
+
+机器级物理内存保护应用于 supervisor 物理地址，并且无论虚拟化模式如何都生效。
+
+[[guest-addr-translation]]
+==== 客户物理地址转换
+
+客户物理地址到 supervisor 物理地址的映射由 CSR `hgatp`（<<hgatp>>）控制。
+
+当 `hgatp` 的 MODE 字段选择的地址转换方案为 Bare 时，客户物理地址等于 supervisor 物理地址而不进行修改，并且在客户物理地址到 supervisor 物理地址的简单转换中不应用内存保护。
+
+当 `hgatp`.MODE 指定 Sv32x4、Sv39x4、Sv48x4 或 Sv57x4 的转换方案时，G 阶段地址转换是对通常的 Sv32、Sv39、Sv48 或 Sv57 的基于页面的虚拟地址转换方案的变体。在每种情况下，输入地址的大小都扩宽 2 位（到 34、41、50 或 59 位）。为了适应额外的 2 位，根页表（仅根页表）扩展了四倍，从通常的 4 KiB 扩展到 16 KiB。与其更大的尺寸相匹配，根页表也必须对齐到 16 KiB 边界而不是通常的 4 KiB 页边界。除非另有说明，否则 Sv32、Sv39、Sv48 或 Sv57 的所有其他方面都原封不动地采用于 G 阶段转换。非根页表和所有页表条目（PTE）具有与 <<sv32>>、<<sv39>>、<<sv48>> 和 <<sv57>> 中记录的相同格式。
+
+对于 Sv32x4，输入的客户物理地址被分割为虚拟页号（VPN）和页偏移，如 <<sv32x4va>> 所示。这种分割与 <<sv32va>> 中描述的 Sv32 虚拟地址的分割相同，除了在 VPN[1] 中在高端有 2 个更多的位。（请注意，分割的客户物理地址的字段也与 Sv32 分配给物理地址的结构一一对应，如 <<sv32va>> 中描述的。）
+
+[[sv32x4va]]
+.Sv32x4 虚拟地址（客户物理地址）。
+include::images/bytefield/sv32x4va.edn[]
+
+对于 Sv39x4，输入的客户物理地址分割如 <<sv39x4va>> 所示。这种分割与 <<sv39va>> 中描述的 Sv39 虚拟地址的分割相同，除了在 VPN[2] 中在高端有 2 个更多的位。地址位 63:41 必须全部为零，否则发生客户页故障异常。
+
+[[sv39x4va]]
+.Sv39x4 虚拟地址（客户物理地址）。
+include::images/bytefield/sv39x4va.edn[]
+
+对于 Sv48x4，输入的客户物理地址分割如 <<sv48x4va>> 所示。这种分割与 <<sv48va>> 中描述的 Sv48 虚拟地址的分割相同，除了在 VPN[3] 中在高端有 2 个更多的位。地址位 63:50 必须全部为零，否则发生客户页故障异常。
+
+[[sv48x4va]]
+.Sv48x4 虚拟地址（客户物理地址）。
+include::images/bytefield/sv48x4va.edn[]
+
+对于 Sv57x4，输入的客户物理地址分割如 <<sv57x4va>> 所示。这种分割与 <<sv57va>> 中描述的 Sv57 虚拟地址的分割相同，除了在 VPN[4] 中在高端有 2 个更多的位。地址位 63:59 必须全部为零，否则发生客户页故障异常。
+
+[[sv57x4va]]
+.Sv57x4 虚拟地址（客户物理地址）。
+include::images/bytefield/sv57x4va.edn[]
+
+[NOTE]
+====
+RV32 的基于页面的 G 阶段地址转换方案 Sv32x4 与通常的 Sv32 虚拟内存方案的算法与 <<sv32algorithm>> 中描述的相同，除了：
+
+* `hgatp` 替代通常的 `satp`；
+* 为了开始转换，有效特权模式必须是 VS 模式或 VU 模式；
+* 在检查 U 位时，当前特权模式始终被认为是 U 模式；以及
+* 引发客户页故障异常而不是常规页故障异常。
+
+对于 G 阶段地址转换，所有内存访问（包括为访问 VS 阶段地址转换的数据结构而进行的访问）都被认为是用户级访问，就像在 U 模式下执行一样。访问类型权限——可读、可写或可执行——在 G 阶段转换期间检查，与 VS 阶段转换相同。对于为支持 VS 阶段地址转换而进行的内存访问（例如读/写 VS 级页表），在 G 阶段级别检查权限和设置 A 和/或 D 位的需要，就像隐式加载或存储一样，而不是原始访问类型。但是，任何异常始终为原始访问类型（指令、加载或存储/AMO）报告。
+
+所有 G 阶段 PTE 中的 G 位保留供未来标准使用。在标准扩展定义其用法之前，软件应将其清除以实现向前兼容，硬件必须忽略它。
+
+[NOTE]
+====
+G 阶段地址转换使用与常规地址转换相同的 PTE 格式，甚至包括 U 位，因为可能在 G 阶段转换和常规 HS 级地址转换之间共享一些（或全部）页表。无论这种用法是否会成为常见情况，我们选择不排除它。
+====
+
+==== 客户页故障
+
+客户页故障陷阱可以在 CSR `medeleg` 的控制下从 M 模式委托给 HS 模式，但不能委托给其他特权模式。在客户页故障时，CSR `mtval` 或 `stval` 像平常一样写入故障的客户虚拟地址，`mtval2` 或 `htval` 写入零或故障的客户物理地址，右移 2 位。CSR `mtinst` 或 `htinst` 也可能写入有关故障指令或访问的其他原因的信息，如 <<tinst-vals>> 中所解释的。
+
+当指令获取或未对齐的内存访问跨越页边界时，涉及两个不同的地址转换。在这种情况下发生客户页故障时，写入 `mtval`/`stval` 的故障虚拟地址与常规页故障所需的相同。因此，如果该页边界处的字节位于访问的字节中，则故障虚拟地址可能是比指令的原始虚拟地址更高的页边界地址。
+
+当客户页故障不是由于 VS 阶段地址转换的隐式内存访问导致的时，写入 `mtval2`/`htval` 的非零客户物理地址应对应于写入 `mtval`/`stval` 的精确虚拟地址。
+
+[[hyp-mm-fences]]
+==== 内存管理栅栏
+
+SFENCE.VMA 指令的行为受当前虚拟化模式 V 的影响。当 V=0 时，虚拟地址参数是 HS 级虚拟地址，ASID 参数是 HS 级 ASID。该指令仅将对 HS 级地址转换结构的存储与后续的 HS 级地址转换排序。
+
+当 V=1 时，SFENCE.VMA 的虚拟地址参数是当前虚拟机内的客户虚拟地址，ASID 参数是当前虚拟机内的 VS 级 ASID。当前虚拟机由 CSR `hgatp` 的 VMID 字段标识，有效 ASID 可以被认为是此 VMID 与 VS 级 ASID 的组合。SFENCE.VMA 指令仅将对 VS 级地址转换结构的存储与同一虚拟机的后续 VS 阶段地址转换排序，即仅当 `hgatp`.VMID 与 SFENCE.VMA 执行时相同时。
+
+管理程序指令 HFENCE.VVMA 和 HFENCE.GVMA 提供了额外的内存管理栅栏来补充 SFENCE.VMA。这些指令在 <<hfence.vma>> 中描述。
+
+<<pmp-vmem>> 讨论了物理内存保护（PMP）和基于页面的地址转换之间的交集。在那里注意到，当 PMP 设置以影响保存页表的物理内存或页表指向的物理内存的方式修改时，M 模式软件必须将 PMP 设置与虚拟内存系统同步。对于 HS 级地址转换，这通过在写入 PMP CSR 后在 M 模式下执行 _rs1_=`x0` 和 _rs2_=`x0` 的 SFENCE.VMA 指令来完成。也需要与 G 阶段和 VS 阶段数据结构同步。执行 _rs1_=`x0` 和 _rs2_=`x0` 的 HFENCE.GVMA 指令足以刷新所有已缓存与最终转换的 supervisor 物理地址对应的 PMP 设置的 G 阶段或 VS 阶段地址转换缓存条目。不需要 HFENCE.VVMA 指令。
+
+同样，如果更改了 `menvcfg` 中 PBMTE 位的设置，执行 _rs1_=`x0` 和 _rs2_=`x0` 的 HFENCE.GVMA 指令足以对 G 阶段和 VS 阶段 PTE 的 PBMT 字段的更改解释进行同步。
+
+相比之下，如果更改了 `henvcfg` 中的 PBMTE 位，执行 _rs1_=`x0` 和 _rs2_=`x0` 的 HFENCE.VVMA 足以对当前活动 VMID 的 VS 阶段 PTE 的 PBMT 字段的更改解释进行同步。
+
+注意：没有提供机制来原子地同时更改 `vsatp` 和 `hgatp`。因此，为了防止投机执行导致一个客户的 VS 阶段转换在另一个客户的 VMID 下被缓存，世界切换代码应该将 `vsatp` 清零，然后交换 `hgatp`，然后最终写入新的 `vsatp` 值。同样，如果需要世界切换 `henvcfg`.PBMTE，应该在将 `vsatp` 清零之后但在写入新的 `vsatp` 值之前进行切换，这样可以避免需要执行 HFENCE.VVMA 指令。
+
+=== 陷阱
+
+[[sec:hcauses]]
+==== 陷阱原因码
+
+管理程序扩展增强了陷阱原因编码。<<hcauses>> 列出了实现管理程序扩展时可能的 M 模式和 HS 模式陷阱原因码。为 VS 级中断（中断 2、6、10）、supervisor 级客户外部中断（中断 12）、虚拟指令异常（异常 22）和客户页故障（异常 20、21、23）添加了代码。此外，来自 VS 模式的环境调用分配原因 10，而来自 HS 模式或 S 模式的环境调用像平常一样使用原因 9。
+
+[[hcauses]]
+.实现管理程序扩展时的机器和 supervisor 原因寄存器（`mcause` 和 `scause`）值。
+[%autowidth,float="center",align="center",cols=">,>,<",options="header"]
+|===
+|中断 |异常代码 |描述
+|1 +
+1 +
+1 +
+1
+|0 +
+1 +
+2 +
+3
+|_保留_ +
+Supervisor 软件中断 +
+虚拟 supervisor 软件中断 +
+机器软件中断
+|1 +
+1 +
+1 +
+1
+|4 +
+5 +
+6 +
+7
+|_保留_ +
+Supervisor 定时器中断 +
+虚拟 supervisor 定时器中断 +
+机器定时器中断
+|1 +
+1 +
+1 +
+1
+|8 +
+9 +
+10 +
+11
+|_保留_ +
+Supervisor 外部中断 +
+虚拟 supervisor 外部中断 +
+机器外部中断
+|1 +
+1 +
+1 +
+1
+|12 +
+13 +
+14-15 +
+≥16
+|Supervisor 客户外部中断 +
+_保留用于计数器溢出中断_ +
+_保留_ +
+_指定用于平台使用_
+|0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0 +
+0
+|0 +
+1 +
+2 +
+3 +
+4 +
+5 +
+6 +
+7 +
+8 +
+9 +
+10 +
+11 +
+12 +
+13 +
+14 +
+15 +
+16 +
+17 +
+18 +
+19 +
+20 +
+21 +
+22 +
+23 +
+24-31 +
+32-47 +
+48-63 +
+≥64
+|指令地址未对齐 +
+指令访问故障 +
+非法指令 +
+断点 +
+加载地址未对齐 +
+加载访问故障 +
+存储/AMO 地址未对齐 +
+存储/AMO 访问故障 +
+来自 U 模式或 VU 模式的环境调用 +
+来自 HS 模式的环境调用 +
+来自 VS 模式的环境调用 +
+来自 M 模式的环境调用 +
+指令页故障 +
+加载页故障 +
+_保留_ +
+存储/AMO 页故障 +
+双重陷阱 +
+_保留_ +
+软件检查 +
+硬件错误 +
+指令客户页故障 +
+加载客户页故障 +
+虚拟指令 +
+存储/AMO 客户页故障 +
+_指定用于自定义使用_ +
+_保留_ +
+_指定用于自定义使用_ +
+_保留_
+|===
+
+HS 模式和 VS 模式 ECALL 使用不同的原因值，因此它们可以分别委托。
+
+当 V=1 时，如果尝试的指令是 _HS 合格的_ 但由于特权不足或因为指令被 supervisor 或管理程序 CSR（如 `scounteren` 或 `hcounteren`）明确禁用而在 V=1 时被阻止执行，通常会引发虚拟指令异常（代码 22）而不是非法指令异常。如果在 HS 模式下执行有效（对于指令的寄存器操作数的某些值），假设 CSR `mstatus` 的字段 TSR 和 TVM 都为零，则指令是 _HS 合格的_。
+
+对于访问 32 位高半部分 CSR（如 `cycleh` 和 `htimedeltah`）的 CSR 指令，适用特殊规则。当 V=1 且 XLEN=32 时，如果对应的 _低半部分_ CSR（例如 `cycle` 或 `htimedelta`）的相同 CSR 指令是 HS 合格的，则对高半部分 CSR 的无效访问尝试会引发虚拟指令异常而不是非法指令异常。
+
+[NOTE]
+====
+当 XLEN>32 时，尝试访问高半部分 CSR 始终引发非法指令异常。
+====
+
+具体而言，以下情况会引发虚拟指令异常：
+
+* 在 VS 模式下，当 `hcounteren` 中的相应位为 0 且 `mcounteren` 中的相同位为 1 时，尝试访问非高半部分计数器 CSR；
+* 在 VS 模式下，如果 XLEN=32，当 `hcounteren` 中的相应位为 0 且 `mcounteren` 中的相同位为 1 时，尝试访问高半部分计数器 CSR；
+* 在 VU 模式下，当 `hcounteren` 或 `scounteren` 中的相应位为 0 且 `mcounteren` 中的相同位为 1 时，尝试访问非高半部分计数器 CSR；
+* 在 VU 模式下，如果 XLEN=32，当 `hcounteren` 或 `scounteren` 中的相应位为 0 且 `mcounteren` 中的相同位为 1 时，尝试访问高半部分计数器 CSR；
+* 在 VS 模式或 VU 模式下，尝试执行管理程序指令（HLV、HLVX、HSV 或 HFENCE）；
+* 在 VS 模式或 VU 模式下，当在 HS 模式下允许相同访问（读/写）时（假设 `mstatus`.TVM=0），尝试访问已实现的非高半部分管理程序 CSR 或 VS CSR；
+* 在 VS 模式或 VU 模式下，如果 XLEN=32，当在 HS 模式下允许对 CSR 的低半部分伙伴进行相同访问时（假设 `mstatus`.TVM=0），尝试访问已实现的高半部分管理程序 CSR 或高半部分 VS CSR；
+* 在 VU 模式下，当 `mstatus`.TW=0 时尝试执行 WFI，或尝试执行 supervisor 指令（SRET 或 SFENCE）；
+* 在 VU 模式下，当在 HS 模式下允许相同访问（读/写）时（假设 `mstatus`.TVM=0），尝试访问已实现的非高半部分 supervisor CSR；
+* 在 VU 模式下，如果 XLEN=32，当在 HS 模式下允许对 CSR 的低半部分伙伴进行相同访问时（假设 `mstatus`.TVM=0），尝试访问已实现的高半部分 supervisor CSR；
+* 在 VS 模式下，当 `hstatus`.VTW=1 且 `mstatus`.TW=0 时尝试执行 WFI，除非指令在实现特定的有界时间内完成；
+* 在 VS 模式下，当 `hstatus`.VTSR=1 时尝试执行 SRET；以及
+* 在 VS 模式下，当 `hstatus`.VTVM=1 时尝试执行 SFENCE.VMA 或 SINVAL.VMA 指令或访问 `satp`。
+
+对 RISC-V 特权架构的其他扩展可能会在 V=1 时增加引发虚拟指令异常的情况。
+
+在虚拟指令陷阱时，`mtval` 或 `stval` 的写入与非法指令陷阱相同。
+
+[NOTE]
+====
+管理程序必须模拟引发虚拟指令异常的指令并不异常，以支持嵌套管理程序或出于其他原因。预期机器级通常会将虚拟指令陷阱直接委托给 HS 级，而非法指令陷阱可能会在 M 模式下首先处理，然后由软件有条件地委托给 HS 级。因此，预期虚拟指令陷阱通常比非法指令陷阱处理得更快。
+
+当不模拟陷阱指令时，管理程序应将虚拟指令陷阱转换为客户虚拟机的非法指令异常。
+
+***
+
+因为 `mstatus` 中的 TSR 和 TVM 旨在仅影响 S 模式（HS 模式），在确定 VS 模式中的异常时忽略它们。
+====
+
+寄存器 `sstatus` 和 `vsstatus` 中的字段 FS 和 VS 偏离了通常的 _HS 合格_ 规则。如果指令因为 `sstatus` 或 `vsstatus` 中的 FS 或 VS 为零而被阻止执行，引发的异常始终是非法指令异常，而不是虚拟指令异常。
+
+[NOTE]
+====
+H 扩展的早期实现以这种方式特殊处理 `sstatus` 和 `vsstatus` 中的 FS 和 VS，为了保持软件的兼容性，这种行为已被成文化。
+====
+
+<<<
+
+[[HSyncExcPrio]]
+.实现管理程序扩展时的同步异常优先级。
+[%autowidth,float="center",align="center",cols="<,>,<",options="header"]
+|===
+|优先级 |异常代码 |描述
+|_最高_ |3 |指令地址断点
+
+| .>|12, 20, 1 |在指令地址转换期间： +
+&#160;&#160;&#160;首先遇到的页故障、客户页故障或访问故障
+
+| .>|1 |对于指令的物理地址： +
+&#160;&#160;&#160;指令访问故障
+
+| |2 +
+22 +
+0 +
+8, 9, 10, 11 +
+3 +
+3|非法指令 +
+虚拟指令 +
+指令地址未对齐 +
+环境调用 +
+环境断点 +
+&#160;&#160;&#160;加载/存储/AMO 地址断点
+
+| .>|4,6 |可选： +
+&#160;&#160;&#160;加载/存储/AMO 地址未对齐
+
+| .>|13, 15, 21, 23, 5, 7 |在显式内存访问的地址转换期间： +
+&#160;&#160;&#160;首先遇到的页故障、客户页故障或访问故障
+
+| .>|5, 7 |对于显式内存访问的物理地址： +
+&#160;&#160;&#160;加载/存储/AMO 访问故障
+
+.>|_最低_ .>|4, 6 |如果不是更高优先级： +
+&#160;&#160;&#160;加载/存储/AMO 地址未对齐
+|===
+
+如果指令可能引发多个同步异常，<<HSyncExcPrio>> 的递减优先级顺序指示了哪个异常被采取并在 `mcause` 或 `scause` 中报告。
+
+==== 陷阱进入
+
+当陷阱在 HS 模式或 U 模式下发生时，它进入 M 模式，除非被 `medeleg` 或 `mideleg` 委托，在这种情况下它进入 HS 模式。当陷阱在 VS 模式或 VU 模式下发生时，它进入 M 模式，除非被 `medeleg` 或 `mideleg` 委托，在这种情况下它进入 HS 模式，除非进一步被 `hedeleg` 或 `hideleg` 委托，在这种情况下它进入 VS 模式。
+
+当陷阱进入 M 模式时，虚拟化模式 V 设置为 0，`mstatus`（或 `mstatush`）中的字段 MPV 和 MPP 根据 <<h-mpp>> 设置。进入 M 模式的陷阱还会在 `mstatus`/`mstatush` 中写入字段 GVA、MPIE 和 MIE，并写入 CSR `mepc`、`mcause`、`mtval`、`mtval2` 和 `mtinst`。
+
+[[h-mpp]]
+.进入 M 模式的陷阱后 `mstatus`/`mstatush` 字段 MPV 和 MPP 的值。在陷阱返回时，当 MPP=3 时忽略 MPV。
+[%autowidth,float="center",align="center",cols="<,^,^",options="header"]
+|===
+|先前模式 |MPV |MPP
+|U 模式 +
+HS 模式 +
+M 模式|0 +
+0 +
+0|0 +
+1 +
+3
+|VU 模式 +
+VS 模式|1 +
+1|0 +
+1
+|===
+
+当陷阱进入 HS 模式时，虚拟化模式 V 设置为 0，`hstatus`.SPV 和 `sstatus`.SPP 根据 <<h-spp>> 设置。如果陷阱前 V 为 1，`hstatus` 中的字段 SPVP 设置为与 `sstatus`.SPP 相同；否则，SPVP 保持不变。进入 HS 模式的陷阱还会在 `hstatus` 中写入字段 GVA，在 `sstatus` 中写入字段 SPIE 和 SIE，并写入 CSR `sepc`、`scause`、`stval`、`htval` 和 `htinst`。
+
+[[h-spp]]
+.进入 HS 模式的陷阱后 `hstatus` 字段 SPV 和 `sstatus` 字段 SPP 的值。
+[%autowidth,float="center",align="center",cols="<,^,^",options="header"]
+|===
+|先前模式 |SPV |SPP
+|U 模式 +
+HS 模式 + |0 +
+0 |0 +
+1
+|VU 模式 +
+VS 模式|1 +
+1 |0 +
+1
+|===
+
+当陷阱进入 VS 模式时，`vsstatus`.SPP 根据 <<h-vspp>> 设置。寄存器 `hstatus` 和 HS 级 `sstatus` 不被修改，虚拟化模式 V 保持为 1。进入 VS 模式的陷阱还会在 `vsstatus` 中写入字段 SPIE 和 SIE，并写入 CSR `vsepc`、`vscause` 和 `vstval`。
+
+[[h-vspp]]
+.进入 VS 模式的陷阱后 `vsstatus` 字段 SPP 的值。
+[%autowidth,float="center",align="center",cols="<,^",options="header"]
+|===
+|先前模式 |SPP
+|VU 模式 +
+VS 模式 |0 +
+1
+|===
+
+[[tinst-vals]]
+==== `mtinst` 或 `htinst` 的转换指令或伪指令
+
+在任何进入 M 模式或 HS 模式的陷阱时，以下值之一会自动写入适当的陷阱指令 CSR `mtinst` 或 `htinst`：
+
+* 零；
+* 陷阱指令的转换；
+* 自定义值（仅当陷阱指令是非标准的时候允许）；或
+* 特殊伪指令。
+
+除了需要伪指令值的情况（稍后描述）外，写入 `mtinst` 或 `htinst` 的值始终可以是零，表示硬件在此特定陷阱的寄存器中没有提供信息。
+
+[NOTE]
+====
+写入陷阱指令 CSR 的值有两个目的。首先是通过允许处理程序跳过从内存加载陷阱指令，以及通过省略解码和执行指令的一些工作，来提高陷阱处理程序中指令模拟的速度。第二个目的是通过伪指令提供关于由 VS 阶段地址转换的隐式内存访问导致的客户页故障异常的额外信息。
+
+写入陷阱指令的 _转换_ 而不是简单地复制原始指令，是为了最小化硬件的负担，但仍然向陷阱处理程序提供模拟指令所需的信息。实现可以在任何时候通过以零替代转换后的指令来减少其努力。
+====
+
+在中断时，写入陷阱指令寄存器的值始终为零。在同步异常时，如果写入非零值，关于该值的以下之一应为真：
+
+* 位 0 为 `1`，并且将位 1 替换为 `1` 使值成为标准指令的有效编码。
++
+在这种情况下，陷阱的指令与寄存器值指示的类型相同，寄存器值是陷阱指令的转换，如稍后定义的。例如，如果位 1:0 为二进制 `11` 且寄存器值是标准 LW（加载字）指令的编码，则陷阱指令是 LW，寄存器值是陷阱 LW 指令的转换。
+* 位 0 为 `1`，并且将位 1 替换为 `1` 使值成为明确指定用于自定义指令的指令编码（_不是_ 未使用的保留编码）。
++
+这是一个 _自定义值_。陷阱的指令是非标准指令。自定义值的解释不被此标准其他方式指定。
+* 值是稍后定义的特殊伪指令之一，所有这些指令的位 1:0 都等于 `00`。
+
+这三种情况排除了大量其他可能的值，例如所有位 1:0 等于二进制 `10` 的值。未来的标准或扩展可能定义额外情况，从而允许当前被排除的值。软件可以安全地将陷阱指令寄存器中的无法识别的值与零相同对待。
+
+[NOTE]
+====
+为了与此标准的未来修订向前兼容，解释来自 `mtinst` 或 `htinst` 的非零值的软件必须完全验证该值符合上述情况之一。例如，对于 RV64，发现 `mtinst` 的位 6:0 为 `0000011` 且位 14:12 为 `010` 并不足以确定第一种情况适用且陷阱指令是标准 LW 指令；相反，软件还必须确认 `mtinst` 的位 63:32 都是零。未来标准可能为 64 位 `mtinst` 定义在位 63:32 中非零的新值，但可能巧合地在位 31:0 中具有与标准 RV64 指令相同的位模式。
+
+***
+
+与标准指令不同，没有要求自定义值的指令编码与陷阱的指令具有相同的“类型”（或甚至与陷阱指令有任何关联）。
+====
+
+<<tinst-values>> 显示了可以为每个标准异常原因自动写入陷阱指令寄存器的值。对于阻止获取指令的异常，只能写入零或伪指令值。只有当陷阱的指令是非标准的时候，才可以自动写入自定义值。未来的标准或扩展可能允许写入其他值，从早期建立的允许值集中选择。
+
+<<<
+
+[[tinst-values]]
+.在异常陷阱时可以自动写入陷阱指令（`mtinst` 或 `htinst`）寄存器的值。
+[float="center",align="center",cols="2,^,^,^,^",options="header"]
+|===
+<.>|异常
+^.>|零
+|转换 +
+标准 +
+指令
+^.>|自定义值
+^.>|伪指令值
+|指令地址未对齐 |是 |否 |是 |否
+|指令访问故障 +
+非法指令 +
+断点 +
+虚拟指令
+|是 +
+是 +
+是 +
+是
+|否 +
+否 +
+否 +
+否 +
+|否 +
+否 +
+是 +
+是
+|否 +
+否 +
+否 +
+否
+|加载地址未对齐 +
+加载访问故障 +
+存储/AMO 地址未对齐 +
+存储/AMO 访问故障
+|是 +
+是 +
+是 +
+是
+|是 +
+是 +
+是 +
+是
+|是 +
+是 +
+是 +
+是
+|否 +
+否 +
+否 +
+否
+|环境调用 |是 |否 |是 |否
+|指令页故障 +
+加载页故障 +
+存储/AMO 页故障
+|是 +
+是 +
+是
+|否 +
+是 +
+是
+|否 +
+是 +
+是
+|否 +
+否 +
+否
+|指令客户页故障 +
+加载客户页故障 +
+存储/AMO 客户页故障
+|是 +
+是 +
+是
+|否 +
+是 +
+是
+|否 +
+是 +
+是
+|是 +
+是 +
+是
+|===
+
+如表中所列，同步异常可以将陷阱指令的标准转换写入陷阱指令寄存器，仅限于来自显式内存访问（来自加载、存储和 AMO 指令）的异常。相应地，标准转换目前仅为这些内存访问指令定义。如果对于没有定义转换的标准指令发生同步陷阱，应将陷阱指令寄存器写入零（或在某些情况下写入特殊伪指令值）。
+
+对于不是压缩指令且是 LB、LBU、LH、LHU、LW、LWU、LD、FLW、FLD、FLQ 或 FLH 之一的标准加载指令，转换后的指令具有 <<transformedloadinst>> 中显示的格式。
+
+[[transformedloadinst]]
+.转换后的加载指令（LB、LBU、LH、LHU、LW、LWU、LD、FLW、FLD、FLQ 或 FLH）。字段 funct3、rd 和 opcode 与陷阱加载指令相同。
+include::images/wavedrom/transformedloadinst.edn[]
+
+对于不是压缩指令且是 SB、SH、SW、SD、FSW、FSD、FSQ 或 FSH 之一的标准存储指令，转换后的指令具有 <<transformedstoreinst>> 中显示的格式。
+
+[[transformedstoreinst]]
+.转换后的存储指令（SB、SH、SW、SD、FSW、FSD、FSQ 或 FSH）。字段 rs2、funct3 和 opcode 与陷阱存储指令相同。
+include::images/wavedrom/transformedstoreinst.edn[]
+
+对于标准原子指令（加载保留、存储条件或 AMO 指令），转换后的指令具有 <<transformedatomicinst>> 中显示的格式。
+
+[[transformedatomicinst]]
+.转换后的原子指令（加载保留、存储条件或 AMO 指令）。除了位 19:15（Addr. Offset）外，所有字段都与陷阱指令相同。
+include::images/wavedrom/transformedatomicinst.edn[]
+
+对于标准虚拟机加载/存储指令（HLV、HLVX 或 HSV），转换后的指令具有 <<transformedvmaccessinst>> 中显示的格式。
+
+[[transformedvmaccessinst]]
+.转换后的虚拟机加载/存储指令（HLV、HLVX、HSV）。除了位 19:15（Addr. Offset）外，所有字段都与陷阱指令相同。
+include::images/wavedrom/transformedvmaccessinst.edn[]
+
+在上述所有转换后的指令中，替换指令的 rs1 字段在位 19:15 的 Addr. Offset 字段是故障虚拟地址（写入 `mtval` 或 `stval`）与原始虚拟地址之间的正差值。这个差值只有在未对齐的内存访问时才可能非零。请注意，对于基本加载和存储，转换将指令的立即偏移字段替换为零。
+
+对于标准压缩指令（16 位大小），转换后的指令按以下方式找到：
+
+. 将压缩指令扩展为其 32 位等效指令。
+. 转换 32 位等效指令。
+. 将位 1 替换为 `0`。
+
+如果陷阱指令被压缩，转换后的标准指令的位 1:0 将是二进制 `01`；如果不被压缩，则为 `11`。
+
+[NOTE]
+====
+在解码 `mtinst` 或 `htinst` 的内容时，一旦软件确定寄存器包含标准基本加载（LB、LBU、LH、LHU、LW、LWU、LD、FLW、FLD、FLQ 或 FLH）或基本存储（SB、SH、SW、SD、FSW、FSD、FSQ 或 FSH）的编码，就不需要确认立即偏移字段（31:25 和 24:20 或 11:7）也是零。知道寄存器的值是基本加载/存储的编码足以证明陷阱指令是相同类型的。
+
+此标准的未来版本可能会在当前为零的字段中添加信息。但是，为了向后兼容，任何此类信息都仅供性能目的，可以安全地忽略。
+====
+
+对于客户页故障，如果：(a) 故障是由 VS 阶段地址转换的隐式内存访问导致的，以及 (b) 向 `mtval2` 或 `htval` 写入非零值（故障的客户物理地址），则将特殊伪指令值写入陷阱指令寄存器。如果两个条件都满足，写入 `mtinst` 或 `htinst` 的值必须从 <<pseudoinsts>> 中取得；不允许为零。
+
+[[pseudoinsts]]
+.客户页故障的特殊伪指令值。当 VSXLEN=32 时使用 RV32 值，当 VSXLEN=64 时使用 RV64 值。
+[%autowidth,float="center",align="center",cols="<,<",options="header"]
+|===
+|值 |含义
+|`0x00002000` +
+`0x00002020`
+|用于 VS 阶段地址转换的 32 位读取（RV32） +
+用于 VS 阶段地址转换的 32 位写入（RV32）
+
+|`0x00003000` +
+`0x00003020`
+|用于 VS 阶段地址转换的 64 位读取（RV64） +
+用于 VS 阶段地址转换的 64 位写入（RV64）
+|===
+
+定义的伪指令值被设计为与基本加载和存储的编码密切对应，如 <<pseudoinsts-basis>> 所示。
+
+[[pseudoinsts-basis]]
+.与 <<pseudoinsts>> 的特殊伪指令对应的标准指令。
+[%autowidth,float="center",align="center",cols="<,<",options="header"]
+|===
+|编码 |指令
+|`0x00002003` +
+`0x00002023`
+|`lw x0,0(x0)` +
+`sw x0,0(x0)`
+
+|`0x00003003` +
+`0x00003023`
+|`ld x0,0(x0)` +
+`sd x0,0(x0)`
+|===
+
+_写入_ 伪指令（`0x00002020` 或 `0x00003020`）用于机器尝试自动更新 VS 级页表中的 A 和/或 D 位的情况。用于 VS 阶段地址转换的所有其他隐式内存访问都将是读取。如果机器从不自动更新 VS 级页表中的 A 或 D 位（将此留给软件），将不会出现 _写入_ 情况。此类页表更新必须实际上是原子的，而不仅仅是简单的写入，这一事实在伪指令中被忽略。
+
+[NOTE]
+====
+如果需要伪指令值的条件可能在 M 模式下出现，则 `mtinst` 不能完全为只读零；同样，对于 HS 模式和 `htinst`。但是，在这种情况下，陷阱指令寄存器可以最少支持值 0 和 `0x00002000` 或 `0x00003000`，可能还有 `0x00002020` 或 `0x00003020`，每个寄存器在硬件中仅需要一个或两个触发器。
+
+***
+
+在这里忽略页表更新的原子性要求是没有害处的，因为在这些情况下，管理程序不应该模拟失败的隐式内存访问。相反，管理程序得到足够的关于故障访问的信息，以能够使内存可访问（例如通过恢复缺失的虚拟内存页面），然后通过重试故障指令来恢复执行。
+====
+
+==== 陷阱返回
+
+MRET 指令用于从进入 M 模式的陷阱返回。MRET 首先根据 `mstatus` 或 `mstatush` 中 MPP 和 MPV 的值确定新的特权模式，如 <<h-mpp>> 中编码的。然后 MRET 在 `mstatus`/`mstatush` 中设置 MPV=0、MPP=0、MIE=MPIE 和 MPIE=1。最后，MRET 设置先前确定的特权模式，并设置 `pc`=`mepc`。
+
+SRET 指令用于从进入 HS 模式或 VS 模式的陷阱返回。其行为取决于当前的虚拟化模式。
+
+当在 M 模式或 HS 模式（即 V=0）下执行时，SRET 首先根据 `hstatus`.SPV 和 `sstatus`.SPP 中的值确定新的特权模式，如 <<h-spp>> 中编码的。然后 SRET 设置 `hstatus`.SPV=0，并在 `sstatus` 中设置 SPP=0、SIE=SPIE 和 SPIE=1。最后，SRET 设置先前确定的特权模式，并设置 `pc`=`sepc`。
+
+当在 VS 模式（即 V=1）下执行时，SRET 根据 <<h-vspp>> 设置特权模式，在 `vsstatus` 中设置 SPP=0、SIE=SPIE 和 SPIE=1，最后设置 `pc`=`vsepc`。
+
+如果实现了 Ssdbltrp 扩展，当在 HS 模式下执行 `SRET` 时，如果新的特权模式是 VU，`SRET` 指令将 `vsstatus.SDT` 设置为 0。当在 VS 模式下执行时，`vsstatus.SDT` 设置为 0。

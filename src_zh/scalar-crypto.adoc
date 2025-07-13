@@ -1,18 +1,268 @@
-[File content truncated: showing lines 1-2000 of 4966 total lines. Use offset/limit parameters to view more.]
-== 密码学扩展：向量指令，版本 1.0
+[[crypto_scalar_instructions]]
+== 密码学扩展：标量和熵源指令，版本 1.0.1
 
-本文档描述了 RISC-V 指令集架构的向量密码学扩展。
+=== 更新日志
 
-[[crypto_vector_introduction]]
+[cols="1,5"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+| 版本 | 更改
+
+| `v1.0.1`
+| 修正拼写错误，显示 `c.srli`、`c.srai` 和 `c.slli` 在 RV64 中是 Zkt 指令。
+
+| `v1.0.0`
+| 初始发布
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+[[crypto_scalar_introduction]]
 === 引言
 
-本文档描述了 RISC-V _向量_ 密码学扩展。
-此处提出的所有指令都基于向量寄存器。
-这些指令旨在实现高性能，主要目标是大型应用程序和服务器级核心。
-配套章节 _第一卷：标量和熵源指令_，描述了
-不实现向量扩展的小型核心的密码学指令提案。
+本文档描述了 RISC-V 的 _标量_ 密码学扩展。
+此处描述的所有指令都使用通用 `X` 寄存器，并遵守 2-读-1-写寄存器访问约束。
+这些指令设计为轻量级，适用于 `32` 位和 `64` 位基础架构；从嵌入式 IoT 类核心到不实现向量单元的大型应用类核心。
 
-[[crypto_vector_audience]]
+本文档还描述了熵源的架构接口，可用于生成密码学密钥。
+这在 <<crypto_scalar_es>> 中可以找到。
+
+它还包含一种机制，允许核心实现者在 <<crypto_scalar_zkt>> 中提供 _"常数时间执行"_ 保证。
+
+[[crypto_scalar_audience]]
 ==== 目标受众
 
 密码学是一个专业领域，需要具有不同背景的人员合作才能安全高效地实现。
@@ -40,13 +290,15 @@
 特别是，他们应该了解围绕高效实现 AES 和 SM4 SBox 的文献。
 
 验证工程师::
-这些人负责确保硬件中扩展的正确实现。
+负责确保扩展在硬件中的正确实现。
 不假定具备密码学背景。
 我们期望他们从规范中识别有趣的测试用例。了解其在实际世界中的用法将有助于此。
+我们不期望验证工程师在这个意义上成为熵源设计或认证的专家，因为这是一个非常专业的领域。
+然而，我们确实期望他们识别围绕熵源接口的所有 _架构_ 测试用例。
 
-这些人绝不是唯一关注本规范的人，但他们在我们撰写本规范时是我们考虑最多的人。
+这些人绝不是唯一关注本规范的人，但他们是我们在撰写本规范时考虑最多的人。
 
-[[crypto_vector_sail_specifications]]
+[[crypto_scalar_sail_specifications]]
 ==== Sail 规范
 
 RISC-V 维护一个
@@ -54,112 +306,217 @@ link:https://github.com/riscv/sail-riscv[形式化模型]
 的 ISA 规范，
 使用 Sail ISA 规范语言实现
 cite:[sail]。
-请注意，_Sail_ 指的是规范语言本身，
-并且有一个 _RISC-V 模型_，使用 Sail 编写。
-将“Sail 模型”称为不正确。
-鉴于使用 Sail 实现了许多不同 ISA 的模型，这会产生歧义。
-我们将 RISC-V 的 Sail 实现称为
-“RISC-V Sail 模型”。
+注意 _Sail_ 指的是规范语言本身，
+并且有一个使用 Sail 编写的 _RISC-V 模型_。
+不正确的是指"Sail 模型"。
+这是模糊的，因为有许多使用 Sail 实现的不同 ISA 的模型。我们将 RISC-V 的 Sail 实现称为
+"RISC-V Sail 模型"。
 
-密码学扩展使用来自实际模型的内联 Sail 代码片段，以提供指令功能的规范描述。
-每条指令都附有其在 Sail 中的表达式，并包含对支持函数的调用，这些函数过于冗长，无法直接包含在规范中。
-此支持代码列在
-<<crypto_vector_appx_sail>> 中。
-
+密码学扩展使用来自实际模型的内联 Sail 代码片段来给出指令功能的规范描述。
+每条指令都附有其在 Sail 中的表达式，并包括对支持函数的调用，这些函数太冗长而无法直接包含在规范中。
+这些支持代码列在
+<<crypto_scalar_appx_sail>>。
 建议阅读
 link:https://alasdair.github.io/manual.html[Sail 手册]
-以更好地理解代码片段。
-此外，
-link:https://github.com/billmcspadden-riscv/sail/blob/cookbook_br/cookbook/doc/TheSailCookbook_Complete.pdf[Sail 编程语言：Sail 食谱]
-是一个很好的参考。
+以便最好地理解代码片段。
 
-有关最新的 RISC-V Sail 模型，请参阅
-形式化模型 GitHub
-link:https://github.com/riscv/sail-riscv[仓库]。
+请注意，本文档仅包含形式化模型的子集：请参阅形式化模型 GitHub
+link:https://github.com/riscv/sail-riscv[仓库]
+获取完整模型。
 
-[[crypto_vector_policies]]
+[[crypto_scalar_policies]]
 ==== 策略
 
-在创建此提案时，我们努力遵守以下策略：
+在创建本提案时，我们尝试遵守以下策略：
 
-* 在以下选择之间：
-  1) 支持算法的多种实现策略
+* 当在以下选择之间有选择时：
+  . 支持算法的多样化实现策略
   或
-  2) 支持单一的、性能更高/成本更低的实现风格；
-  向量密码扩展将选择更受约束但性能更高的选项。
+  . 支持单一实现风格，更高性能 / 成本更低；
+  密码扩展将选择更受约束但性能更好的选项。
   这符合 RISC-V 规范其他部分的常见模式，
-  其中执行特定任务的推荐（但非必需）指令序列作为示例给出，
-  以便硬件和软件实现者可以仅针对单一用例进行优化。
+  其中给出了执行特定任务的推荐（但不是必需的）指令序列作为示例，使得硬件和软件实现者都可以仅针对单一用例进行优化。
 
-* 扩展将旨在很好地支持 _现有_ 标准化密码结构。
-  它不会尝试支持提议的标准，或仅存在于学术界的密码结构。
-  与 RISC-V 密码扩展标准化同时或之后确定的密码标准将通过
-  未来对 RISC-V 密码标准扩展的添加或版本进行处理。
-  预计 NIST 轻量级密码竞赛和 NIST 后量子密码竞赛
-  可能会根据时间表以这种方式处理。
+* 该扩展将设计为良好支持 _现有的_ 标准化密码学构造。
+  它不会尝试支持提议的标准或仅存在于学术界的密码学构造。
+  与 RISC-V 密码学扩展标准化同时或之后确定的密码学标准将由 RISC-V 密码学标准扩展的未来添加或版本处理。预计 NIST 轻量级密码学竞赛和 NIST 后量子密码学竞赛可能会以这种方式处理，具体取决于时间表。
 
-* 从历史上看，曾有一些讨论
+* 历史上，已经有一些讨论
   cite:[LSYRR:04]
-  关于通用计算中新支持的操作如何
-  为密码算法启用新基础。
-  标准不会尝试预测新的有用低级操作，这些操作 _可能_ 有用作
-  未来密码结构的构建块。
+  关于通用计算中新支持的操作如何为密码学算法启用新的基础。
+  该标准不会尝试预期新的有用的低级操作，这些操作 _可能_ 作为未来密码学构造的构建块有用。
 
 * 关于侧信道对策：
-  在相关情况下，提议的指令必须旨在消除任何时序侧信道的可能性。
-  对于基于功耗或电磁 (EM) 测量的侧信道，
-  扩展不会旨在支持在 ISA 抽象层之上实现的对策。
-  将在相关情况下提供关于微架构如何以抗功耗/EM 侧信道方式实现指令的建议。
+  在相关的情况下，提议的指令必须旨在消除任何时序侧信道的可能性。
+  对于基于功率或电磁（EM）测量的侧信道，该扩展不会旨在支持在 ISA 抽象层之上实现的对策。
+  在相关情况下，将给出关于微架构如何以抗功率/EM 侧信道的方式实现指令的建议。
 
-[[crypto_vector_extensions]]
+[[crypto_scalar_extensions]]
 === 扩展概述
 
-此处列出了向量密码学指令集扩展引入的扩展组。
+标量密码学指令集扩展引入的扩展组在此列出。
 
-单个密码学扩展的检测使用
-统一的基于软件的 RISC-V 发现方法。
+检测单个密码学扩展使用统一的基于软件的 RISC-V 发现方法。
 
 [NOTE]
 ====
-在撰写本文时，这些发现机制仍在开发中。
+在撰写本文时，这些发现机制仍在进行中。
 ====
 
 .扩展原理说明
 [NOTE, caption="SH"]
 ====
-专业的加密和解密指令被分成不同的功能组，因为某些用例（例如 TLS 1.3 中的 Galois/Counter 模式）不需要解密功能。
+专门的加密和解密指令被分成不同的功能组，因为某些用例（例如，TLS 1.3 中的 Galois/Counter 模式）不需要解密功能。
 
-NIST 和 ShangMi 算法套件是分开的，因为它们的有用性在很大程度上取决于设备预期运行的国家。NIST 密码是大多数标准化互联网协议的一部分，而 ShangMi 密码在中国是必需的。
+NIST 和 ShangMi 算法套件是分开的，因为它们的有用性在很大程度上取决于设备预期运行的国家。NIST 密码是大多数标准化互联网协议的一部分，而 ShangMi 密码在中国使用是必需的。
 ====
 
 [[zbkb-sc,Zbkb-sc]]
-==== `Zbkb` - 用于密码学的位操作指令
+==== `Zbkb` - 密码学位操作指令
 
-此扩展包含对密码学特别有用的位操作指令，其中大多数也包含在 `Zbb` 扩展中。
+此扩展包含对密码学特别有用的位操作指令，其中大多数也在 `Zbb` 扩展中。
 请参阅 <<b-st-ext.adoc#zbkb>>。
 
 [[zbkc-sc,Zbkc-sc]]
 ==== `Zbkc` - 无进位乘法指令
 
 用于 Galois/Counter 模式的常数时间无进位乘法。
-这些指令与 <<b-st-ext.adoc#zbkb>> 分开，因为它们具有相当大的实现开销，无法在其他指令中分摊。
+这些与 <<b-st-ext.adoc#zbkb>> 分开，因为它们具有相当大的实现开销，无法在其他指令中摊销。
 
 请参阅 <<b-st-ext.adoc#zbkc>>。
 
 [[zbkx-sc,Zbkx-sc]]
-==== `Zbkx` - 交叉开关置换指令
+==== `Zbkx` - 交叉置换指令
 
-这些指令对于在常数时间内实现 SBox 非常有用，并且可能具有 DPA 保护。
-这些指令与 <<b-st-ext.adoc#zbkb>> 分开，因为它们具有实现开销，无法在其他指令中分摊。
+这些指令对于在常数时间内实现 SBox 很有用，并且可能具有 DPA 保护。
+这些与 <<b-st-ext.adoc#zbkb>> 分开，因为它们具有无法在其他指令中摊销的实现开销。
 
 请参阅 <<b-st-ext.adoc#zbkx>>。
 
 [[zknd,Zknd]]
 ==== `Zknd` - NIST 套件：AES 解密
 
-用于加速 AES 分组密码的解密和密钥调度功能的指令。
+用于加速 AES 块密码的解密和密钥调度功能的指令。
 
 [%header,cols="^1,^1,4,8"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |RV32
 |RV64
@@ -175,14 +532,250 @@ NIST 和 ShangMi 算法套件是分开的，因为它们的有用性在很大程
 |          | &#10003; | aes64ks2     | <<insns-aes64ks2>>
 |===
 
-NOTE: <<insns-aes64ks1i>> 和 <<insns-aes64ks2>> 指令同时存在于 <<zknd>> 和 <<zkne>> 扩展中。
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+注意：<<insns-aes64ks1i>> 和 <<insns-aes64ks2>> 指令同时存在于 <<zknd>> 和 <<zkne>> 扩展中。
 
 [[zkne,Zkne]]
 ==== `Zkne` - NIST 套件：AES 加密
 
-用于加速 AES 分组密码的加密和密钥调度功能的指令。
+用于加速 AES 块密码的加密和密钥调度功能的指令。
 
 [%header,cols="^1,^1,4,8"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |RV32
 |RV64
@@ -197,7 +790,125 @@ NOTE: <<insns-aes64ks1i>> 和 <<insns-aes64ks2>> 指令同时存在于 <<zknd>> 
 |          | &#10003; | aes64ks2     | <<insns-aes64ks2>>
 |===
 
-NOTE: 
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+注意：
 <<insns-aes64ks1i,`aes64ks1i`>>
 和
 <<insns-aes64ks2,`aes64ks2`>>
@@ -206,10 +917,128 @@ NOTE:
 [[zknh,Zknh]]
 ==== `Zknh` - NIST 套件：哈希函数指令
 
-用于加速 SHA2 系列密码哈希函数的指令，
-如 cite:[nist:fips:180:4] 中指定。
+用于加速 SHA2 系列密码学哈希函数的指令，
+如 cite:[nist:fips:180:4] 中所述。
 
 [%header,cols="^1,^1,4,8"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |RV32
 |RV64
@@ -232,13 +1061,249 @@ NOTE:
 |          | &#10003; | sha512sum1   | <<insns-sha512sum1>>
 |===
 
-[[zksed,Zksed]]
-==== `Zksed` - ShangMi 套件：SM4 分组密码指令
+<<<
 
-用于加速 SM4 分组密码的指令。
-请注意，与 AES 不同，此密码使用相同的核心操作进行加密和解密，因此只有一个扩展。
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+[[zksed,Zksed]]
+==== `Zksed` - ShangMi 套件：SM4 块密码指令
+
+用于加速 SM4 块密码的指令。
+注意，与 AES 不同，此密码对加密和解密使用相同的核心操作，因此只有一个扩展。
 
 [%header,cols="^1,^1,4,8"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |RV32
 |RV64
@@ -249,12 +1314,248 @@ NOTE:
 | &#10003; | &#10003; | sm4ks        | <<insns-sm4ks>>
 |===
 
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
 [[zksh,Zksh]]
 ==== `Zksh` - ShangMi 套件：SM3 哈希函数指令
 
 用于加速 SM3 哈希函数的指令。
 
 [%header,cols="^1,^1,4,8"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |RV32
 |RV64
@@ -265,32 +1566,384 @@ NOTE:
 | &#10003; | &#10003; | sm3p1        | <<insns-sm3p1>>
 |===
 
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
 [[zkr,Zkr]]
 ==== `Zkr` - 熵源扩展
 
-熵源扩展定义了地址为 `0x015` 的 `seed` CSR。
-此 CSR 提供多达 16 个物理 `entropy` 位，可用于
-为密码随机位生成器播种。
+熵源扩展在地址 `0x015` 定义了 `seed` CSR。
+此 CSR 提供多达 16 个物理 `熵` 位，可用于为密码学随机位生成器提供种子。
 
-请参阅 <<crypto_scalar_es>> 了解规范性规范和访问控制说明。
-<<crypto_scalar_appx_es>> 包含设计原理和对实现者的进一步建议。
+有关规范性规范和访问控制说明，请参阅 <<crypto_scalar_es>>。<<crypto_scalar_appx_es>> 包含设计原理和对实现者的进一步建议。
 
 [[zkn,Zkn]]
 ==== `Zkn` - NIST 算法套件
 
-此扩展是以下其他扩展集的简写：
+此扩展是以下一组其他扩展的简写：
 
 [%header,cols="^1,4"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |包含的扩展
 |描述
 
-| <<zbkb-sc>>  | 用于密码学的位操作指令。
+| <<zbkb-sc>>  | 密码学位操作指令。
 | <<zbkc-sc>>  | 无进位乘法指令。
-| <<zbkx-sc>>  | 交叉开关置换指令。
+| <<zbkx-sc>>  | 交叉置换指令。
 | <<zkne>>  | AES 加密指令。
 | <<zknd>>  | AES 解密指令。
 | <<zknh>>  | SHA2 哈希函数指令。
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 
 实现 `Zkn` 的核心必须实现上述所有扩展。
@@ -298,18 +1951,254 @@ NOTE:
 [[zks,Zks]]
 ==== `Zks` - ShangMi 算法套件
 
-此扩展是以下其他扩展集的简写：
+此扩展是以下一组其他扩展的简写：
 
 [%header,cols="^1,4"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |包含的扩展
 |描述
 
-| <<zbkb-sc>>  | 用于密码学的位操作指令。
+| <<zbkb-sc>>  | 密码学位操作指令。
 | <<zbkc-sc>>  | 无进位乘法指令。
-| <<zbkx-sc>>  | 交叉开关置换指令。
-| <<zksed>> | SM4 分组密码指令。
+| <<zbkx-sc>>  | 交叉置换指令。
+| <<zksed>> | SM4 块密码指令。
 | <<zksh>>  | SM3 哈希函数指令。
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 
 实现 `Zks` 的核心必须实现上述所有扩展。
@@ -317,9 +2206,127 @@ NOTE:
 [[zk,Zk]]
 ==== `Zk` - 标准标量密码学扩展
 
-此扩展是以下其他扩展集的简写：
+此扩展是以下一组其他扩展的简写：
 
 [%header,cols="^1,4"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |包含的扩展
 |描述
@@ -329,14 +2336,129 @@ NOTE:
 | <<crypto_scalar_zkt,Zkt>>  | 数据无关执行延迟扩展。
 |===
 
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
 实现 `Zk` 的核心必须实现上述所有扩展。
 
 ==== `Zkt` - 数据无关执行延迟
 
-此扩展允许 CPU 实现者向
-密码软件开发人员指示，RISC-V 指令的子集
-保证以其执行延迟
-独立于其操作的数据值的方式实现。
+此扩展允许 CPU 实现者向密码软件开发人员表明，RISC-V 指令的子集保证以其执行延迟与它们操作的数据值无关的方式实现。
 此扩展的完整描述可在
 <<crypto_scalar_zkt>> 中找到。
 
@@ -369,16 +2491,16 @@ aes32dsi rd, rs1, rs2, bs
 ....
 
 描述::
-此指令根据 `bs` 从 `rs2` 获取单个字节。
-然后对其应用逆 AES SBox 操作，并与 `rs1` 进行异或。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+此指令根据 `bs` 从 `rs2` 中获取单个字节。
+对其应用逆 AES SBox 操作，并将结果与 `rs1` 进行异或。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
 
 操作::
 [source,sail]
 --
 function clause execute (AES32DSI (bs,rs2,rs1,rd)) = {
   let shamt   : bits( 5) = bs @ 0b000; /* shamt = bs*8 */
-  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox Input */
+  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox 输入 */
   let so      : bits(32) = 0x000000 @ aes_sbox_inv(si);
   let result  : bits(32) = X(rs1)[31..0] ^ rol32(so, unsigned(shamt));
   X(rd) = EXTS(result); RETIRE_SUCCESS
@@ -387,6 +2509,124 @@ function clause execute (AES32DSI (bs,rs2,rs1,rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -405,45 +2645,45 @@ function clause execute (AES32DSI (bs,rs2,rs1,rd)) = {
 
 <<<
 
-[#insns-aes32dsmi, reftext="AES 中间轮解密 (RV32)"]
-==== aes32dsmi
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
 
 概要::
-RV32 的 AES 中间轮解密指令。
+无进位乘法（低部分）
 
 助记符::
-aes32dsmi rd, rs1, rs2, bs
+clmul _rd_, _rs1_, _rs2_
 
 编码::
 [wavedrom, , svg]
 ....
 {reg:[
-{bits: 7, name: 0x33},
-{bits: 5, name: 'rd'},
-{bits: 3, name: 0x0},
-{bits: 5, name: 'rs1'},
-{bits: 5, name: 'rs2'},
-{bits: 5, name: 0x17},
-{bits: 2, name: 'bs'},
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
 ]}
 ....
 
 描述::
-此指令根据 `bs` 从 `rs2` 获取单个字节。
-然后对其应用逆 AES SBox 操作和部分逆 MixColumn，然后与 `rs1` 进行异或。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+clmul 产生 2·XLEN 无进位乘积的低半部分。
 
 操作::
 [source,sail]
 --
-function clause execute (AES32DSMI (bs,rs2,rs1,rd)) = {
-  let shamt   : bits( 5) = bs @ 0b000; /* shamt = bs*8 */
-  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox Input */
-  let so      : bits( 8) = aes_sbox_inv(si);
-  let mixed   : bits(32) = aes_mixcolumn_byte_inv(so);
-  let result  : bits(32) = X(rs1)[31..0] ^ rol32(mixed, unsigned(shamt));
-  X(rd) = EXTS(result); RETIRE_SUCCESS
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
 }
+
+X[rd] = output
 --
 
 包含于::
@@ -453,15 +2693,72 @@ function clause execute (AES32DSMI (bs,rs2,rs1,rd)) = {
 |最低版本
 |生命周期状态
 
-| <<zknd>> (RV32)
-| v1.0.0
-| 已批准
-| <<zkn>> (RV32)
-| v1.0.0
-| 已批准
-| <<zk>> (RV32)
-| v1.0.0
-| 已批准
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 
 <<<
@@ -490,17 +2787,16 @@ aes32esi rd, rs1, rs2, bs
 ....
 
 描述::
-此指令根据 `bs` 从 `rs2` 获取单个字节。
-然后对其应用正向 AES SBox 操作，
-然后与 `rs1` 进行异或。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+此指令根据 `bs` 从 `rs2` 中获取单个字节。
+对其应用正向 AES SBox 操作，然后将结果与 `rs1` 进行异或。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
 
 操作::
 [source,sail]
 --
 function clause execute (AES32ESI (bs,rs2,rs1,rd)) = {
   let shamt   : bits( 5) = bs @ 0b000; /* shamt = bs*8 */
-  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox Input */
+  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox 输入 */
   let so      : bits(32) = 0x000000 @ aes_sbox_fwd(si);
   let result  : bits(32) = X(rs1)[31..0] ^ rol32(so, unsigned(shamt));
   X(rd) = EXTS(result); RETIRE_SUCCESS
@@ -509,6 +2805,124 @@ function clause execute (AES32ESI (bs,rs2,rs1,rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -523,6 +2937,124 @@ function clause execute (AES32ESI (bs,rs2,rs1,rd)) = {
 | <<zk>> (RV32)
 | v1.0.0
 | 已批准
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 
 <<<
@@ -551,16 +3083,16 @@ aes32esmi rd, rs1, rs2, bs
 ....
 
 描述::
-此指令根据 `bs` 从 `rs2` 获取单个字节。
-然后对其应用正向 AES SBox 操作和部分正向 MixColumn，然后与 `rs1` 进行异或。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+此指令根据 `bs` 从 `rs2` 中获取单个字节。
+对其应用正向 AES SBox 操作和部分正向 MixColumn，然后将结果与 `rs1` 进行异或。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
 
 操作::
 [source,sail]
 --
 function clause execute (AES32ESMI (bs,rs2,rs1,rd)) = {
   let shamt   : bits( 5) = bs @ 0b000; /* shamt = bs*8 */
-  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox Input */
+  let si      : bits( 8) = (X(rs2)[31..0] >> shamt)[7..0]; /* SBox 输入 */
   let so      : bits( 8) = aes_sbox_fwd(si);
   let mixed   : bits(32) = aes_mixcolumn_byte_fwd(so);
   let result  : bits(32) = X(rs1)[31..0] ^ rol32(mixed, unsigned(shamt));
@@ -570,6 +3102,124 @@ function clause execute (AES32ESMI (bs,rs2,rs1,rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -588,7 +3238,125 @@ function clause execute (AES32ESMI (bs,rs2,rs1,rd)) = {
 
 <<<
 
-[#insns-aes64ds, reftext="AES 解密最终轮 (RV64)"]
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-aes64ds, reftext="AES 最终轮解密 (RV64)"]
 ==== aes64ds
 
 概要::
@@ -612,22 +3380,21 @@ aes64ds rd, rs1, rs2
 ....
 
 描述::
-使用两个 64 位源寄存器表示整个 AES 状态，
-并产生下一轮输出的 _一半_，应用逆 ShiftRows
-和 SubBytes 步骤。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+使用两个 64 位源寄存器来表示整个 AES 状态，
+并产生下一轮输出的 _一半_，应用逆行移位和逆字节替换步骤。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
 
-.软件开发人员注意事项
+.对软件开发者的说明
 [NOTE,caption="SH"]
 ====
-以下代码片段显示了 AES 分组解密的最终轮。
+以下代码片段显示了 AES 块解密的最终轮。
 `t0` 和 `t1` 保存当前轮状态。
 `t2` 和 `t3` 保存下一轮状态。
 
   aes64ds t2, t0, t1
   aes64ds t3, t1, t0
 
-请注意第二条指令的寄存器顺序颠倒了。
+注意第二条指令的寄存器顺序相反。
 ====
 
 操作::
@@ -643,6 +3410,124 @@ function clause execute (AES64DS(rs2, rs1, rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -661,7 +3546,125 @@ function clause execute (AES64DS(rs2, rs1, rd)) = {
 
 <<<
 
-[#insns-aes64dsm, reftext="AES 解密中间轮 (RV64)"]
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-aes64dsm, reftext="AES 中间轮解密 (RV64)"]
 ==== aes64dsm
 
 概要::
@@ -685,22 +3688,21 @@ aes64dsm rd, rs1, rs2
 ....
 
 描述::
-使用两个 64 位源寄存器表示整个 AES 状态，
-并产生下一轮输出的 _一半_，应用逆 ShiftRows、
-SubBytes 和 MixColumns 步骤。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+使用两个 64 位源寄存器来表示整个 AES 状态，
+并产生下一轮输出的 _一半_，应用逆行移位、逆字节替换和逆列混合步骤。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
 
-.软件开发人员注意事项
+.对软件开发者的说明
 [NOTE,caption="SH"]
 ====
-以下代码片段显示了 AES 分组解密的一个中间轮。
+以下代码片段显示了 AES 块解密的一个中间轮。
 `t0` 和 `t1` 保存当前轮状态。
 `t2` 和 `t3` 保存下一轮状态。
 
   aes64dsm t2, t0, t1
   aes64dsm t3, t1, t0
 
-请注意第二条指令的寄存器顺序颠倒了。
+注意第二条指令的寄存器顺序相反。
 ====
 
 操作::
@@ -717,6 +3719,124 @@ function clause execute (AES64DSM(rs2, rs1, rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -735,7 +3855,125 @@ function clause execute (AES64DSM(rs2, rs1, rd)) = {
 
 <<<
 
-[#insns-aes64es, reftext="AES 加密最终轮指令 (RV64)"]
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-aes64es, reftext="AES 最终轮加密指令 (RV64)"]
 ==== aes64es
 
 概要::
@@ -759,22 +3997,21 @@ aes64es rd, rs1, rs2
 ....
 
 描述::
-使用两个 64 位源寄存器表示整个 AES 状态，
-并产生下一轮输出的 _一半_，应用 ShiftRows 和
-SubBytes 步骤。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+使用两个 64 位源寄存器来表示整个 AES 状态，
+并产生下一轮输出的 _一半_，应用行移位和字节替换步骤。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
 
-.软件开发人员注意事项
+.对软件开发者的说明
 [NOTE,caption="SH"]
 ====
-以下代码片段显示了 AES 分组加密的最终轮。
+以下代码片段显示了 AES 块加密的最终轮。
 `t0` 和 `t1` 保存当前轮状态。
 `t2` 和 `t3` 保存下一轮状态。
 
   aes64es t2, t0, t1
   aes64es t3, t1, t0
 
-请注意第二条指令的寄存器顺序颠倒了。
+注意第二条指令的寄存器顺序相反。
 ====
 
 操作::
@@ -790,6 +4027,124 @@ function clause execute (AES64ES(rs2, rs1, rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -808,7 +4163,125 @@ function clause execute (AES64ES(rs2, rs1, rd)) = {
 
 <<<
 
-[#insns-aes64esm, reftext="AES 加密中间轮指令 (RV64)"]
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-aes64esm, reftext="AES 中间轮加密指令 (RV64)"]
 ==== aes64esm
 
 概要::
@@ -832,22 +4305,21 @@ aes64esm rd, rs1, rs2
 ....
 
 描述::
-使用两个 64 位源寄存器表示整个 AES 状态，
-并产生下一轮输出的 _一半_，应用 ShiftRows、
-SubBytes 和 MixColumns 步骤。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+使用两个 64 位源寄存器来表示整个 AES 状态，
+并产生下一轮输出的 _一半_，应用行移位、字节替换和列混合步骤。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
 
-.软件开发人员注意事项
+.对软件开发者的说明
 [NOTE,caption="SH"]
 ====
-以下代码片段显示了 AES 分组加密的一个中间轮。
+以下代码片段显示了 AES 块加密的一个中间轮。
 `t0` 和 `t1` 保存当前轮状态。
 `t2` 和 `t3` 保存下一轮状态。
 
   aes64esm t2, t0, t1
   aes64esm t3, t1, t0
 
-请注意第二条指令的寄存器顺序颠倒了。
+注意第二条指令的寄存器顺序相反。
 ====
 
 操作::
@@ -864,6 +4336,124 @@ function clause execute (AES64ESM(rs2, rs1, rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -882,12 +4472,129 @@ function clause execute (AES64ESM(rs2, rs1, rd)) = {
 
 <<<
 
-[#insns-aes64im, reftext="AES 解密密钥调度 MixColumns (RV64)"]
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-aes64im, reftext="AES 解密密钥调度列混合 (RV64)"]
 ==== aes64im
 
 概要::
-此指令加速 AES 分组密码的逆 MixColumns 步骤，
-并用于辅助创建解密密钥调度。
+此指令加速 AES 块密码的逆列混合步骤，用于帮助创建解密密钥调度。
 
 助记符::
 aes64im rd, rs1
@@ -907,9 +4614,9 @@ aes64im rd, rs1
 ....
 
 描述::
-此指令将逆 MixColumns 变换应用于状态数组的两列，打包到单个 64 位寄存器中。
+该指令对打包在单个 64 位寄存器中的状态数组的两列应用逆列混合变换。
 它用于根据 cite:[nist:fips:197]（第 23 页，第 5.3.5 节）中的等效逆密码构造创建逆密码密钥调度。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
 
 操作::
 [source,sail]
@@ -924,6 +4631,124 @@ function clause execute (AES64IM(rs1, rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -942,11 +4767,129 @@ function clause execute (AES64IM(rs1, rd)) = {
 
 <<<
 
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
 [#insns-aes64ks1i, reftext="AES 密钥调度指令 1 (RV64)"]
 ==== aes64ks1i
 
 概要::
-此指令实现 AES 分组密码密钥调度操作的一部分，涉及 SBox 操作。
+此指令实现 AES 块密码密钥调度操作中涉及 SBox 操作的部分。
 
 助记符::
 aes64ks1i rd, rs1, rnum
@@ -967,10 +4910,10 @@ aes64ks1i rd, rs1, rnum
 ....
 
 描述::
-此指令实现 AES 分组密码密钥调度的旋转、SubBytes 和轮常数加法步骤。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
-请注意，`rnum` 必须在 `0x0..0xA` 范围内。
-`0xB..0xF` 的值是保留的。
+此指令实现 AES 块密码密钥调度的旋转、字节替换和轮常数添加步骤。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
+注意 `rnum` 必须在范围 `0x0..0xA` 内。
+值 `0xB..0xF` 被保留。
 
 操作::
 [source,sail]
@@ -980,7 +4923,7 @@ function clause execute (AES64KS1I(rnum, rs1, rd)) = {
     handle_illegal();  RETIRE_SUCCESS
   } else {
     let tmp1 : bits(32) = X(rs1)[63..32];
-    let rc   : bits(32) = aes_decode_rcon(rnum); /* round number -> round constant */
+    let rc   : bits(32) = aes_decode_rcon(rnum); /* 轮数 -> 轮常数 */
     let tmp2 : bits(32) = if (rnum ==0xA) then tmp1 else ror32(tmp1, 8);
     let tmp3 : bits(32) = aes_subword_fwd(tmp2);
     let result : bits(64) = (tmp3 ^ rc) @ (tmp3 ^ rc);
@@ -992,6 +4935,124 @@ function clause execute (AES64KS1I(rnum, rs1, rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -1013,11 +5074,129 @@ function clause execute (AES64KS1I(rnum, rs1, rd)) = {
 
 <<<
 
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
 [#insns-aes64ks2, reftext="AES 密钥调度指令 2 (RV64)"]
 ==== aes64ks2
 
 概要::
-此指令实现 AES 分组密码密钥调度操作的一部分。
+此指令实现 AES 块密码密钥调度操作的一部分。
 
 助记符::
 aes64ks2 rd, rs1, rs2
@@ -1037,8 +5216,8 @@ aes64ks2 rd, rs1, rs2
 ....
 
 描述::
-此指令实现密钥字附加异或操作，作为 AES 分组密码密钥调度的一部分。
-此指令必须 _始终_ 实现，使其执行延迟不依赖于操作的数据。
+此指令实现作为 AES 块密码密钥调度一部分的密钥字的额外异或操作。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
 
 操作::
 [source,sail]
@@ -1053,6 +5232,124 @@ function clause execute (AES64KS2(rs2, rs1, rd)) = {
 
 包含于::
 [%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
 |===
 |扩展
 |最低版本
@@ -1074,70 +5371,634 @@ function clause execute (AES64KS2(rs2, rs1, rd)) = {
 
 <<<
 
-[#insns-andn,reftext="按位与非"]
-==== vandn.[vv,vx]
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
 
 概要::
-按位与非
+无进位乘法（低部分）
 
 助记符::
-vandn.vv vd, vs2, vs1, vm +
-vandn.vx vd, vs2, rs1, vm
+clmul _rd_, _rs1_, _rs2_
 
-编码 (向量-向量)::
+编码::
 [wavedrom, , svg]
 ....
 {reg:[
-{bits: 7, name: 'OP-V'},
-{bits: 5, name: 'vd'},
-{bits: 3, name: 'OPIVV'},
-{bits: 5, name: 'vs1'},
-{bits: 5, name: 'vs2'},
-{bits: 1, name: 'vm'},
-{bits: 6, name: '000001'},
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
 ]}
 ....
-
-编码 (向量-标量)::
-[wavedrom, , svg]
-....
-{reg:[
-{bits: 7, name: 'OP-V'},
-{bits: 5, name: 'vd'},
-{bits: 3, name: 'OPIVX'},
-{bits: 5, name: 'rs1'},
-{bits: 5, name: 'vs2'},
-{bits: 1, name: 'vm'},
-{bits: 6, name: '000001'},
-]}
-....
-
-向量-向量参数::
-
-[%autowidth]
-[%header,cols="4,2,2"]
-|===
-|寄存器
-|方向
-|定义
-
-| Vs1 | 输入  | 操作数 1（将被反转）
-| Vs2 | 输入  | 操作数 2
-| Vd  | 输出 | 结果
-|===
-
-向量-标量参数::
-
-[%autowidth]
-[%header,cols="4,2,2"]
-|===
-|寄存器
-|方向
-|定义
-
-| Rs1     | 输入  | 操作数 1（将被反转）
-| Vs2     | 输入  | 操作数 2
-| Vd      | 输出 | 结果
-|===
 
 描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-andn-sc,reftext="按位与反向操作数"]
+==== andn
+
+概要::
+按位与反向操作数
+
+助记符::
+andn _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x7, attr: ['ANDN']},
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x20, attr: ['ANDN'] },
+]}
+....
+
+描述::
+此指令执行 _rs1_ 与 _rs2_ 按位取反之间的按位逻辑与操作。
+
+操作::
+[source,sail]
+--
+X(rd) = X(rs1) & ~X(rs2);
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|1.0.0
+|已批准
+
+|Zbkb (<<#zbkb-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmul-sc,reftext="无进位乘法（低部分）"]
+==== clmul
+
+概要::
+无进位乘法（低部分）
+
+助记符::
+clmul _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x1, attr: ['CLMUL'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmul 产生 2·XLEN 无进位乘积的低半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 0 to (xlen - 1) by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val << i);
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-clmulh-sc,reftext="无进位乘法（高部分）"]
+==== clmulh
+
+概要::
+无进位乘法（高部分）
+
+助记符::
+clmulh _rd_, _rs1_, _rs2_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x3, attr: ['CLMULH'] },
+    { bits:  5, name: 'rs1' },
+    { bits:  5, name: 'rs2' },
+    { bits:  7, name: 0x5, attr: ['MINMAX/CLMUL'] },
+]}
+....
+
+描述::
+clmulh 产生 2·XLEN 无进位乘积的高半部分。
+
+操作::
+[source,sail]
+--
+let rs1_val = X(rs1);
+let rs2_val = X(rs2);
+let output : xlenbits = 0;
+
+foreach (i from 1 to xlen by 1) {
+   output = if   ((rs2_val >> i) & 1)
+            then output ^ (rs1_val >> (xlen - i));
+            else output;
+}
+
+X[rd] = output
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbc (<<#zbc>>)
+|1.0.0
+|已批准
+
+|Zbkc (<<#zbkc-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-brev8-sc,reftext="字节内位反转"]
+==== brev8
+
+概要::
+反转源寄存器中每个字节的位。
+
+助记符::
+brev8 _rd_, _rs_
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5 },
+    { bits:  5, name: 'rs' },
+    { bits: 12, name: 0x687 }
+]}
+....
+
+描述::
+此指令反转寄存器中每个字节内位的顺序。
+
+操作::
+[source,sail]
+--
+result : xlenbits = EXTZ(0b0);
+foreach (i from 0 to sizeof(xlen) by 8) {
+    result[i+7..i] = reverse_bits_in_byte(X(rs1)[i+7..i]);
+};
+X(rd) = result;
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbkb (<<#zbkb-sc>>)
+|v1.0.0-rc4
+|已批准
+|===
+
+<<<
+
+[#insns-sha256sig0, reftext="SHA2-256 Sigma0 指令"]
+==== sha256sig0
+
+概要::
+实现 SHA2-256 哈希函数中使用的 Sigma0 变换函数 cite:[nist:fips:180:4]。
+
+助记符::
+sha256sig0 rd, rs1
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x13},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x1},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 0x2},
+{bits: 5, name: 0x8},
+{bits: 2, name: 0x0},
+]}
+....
+
+描述::
+此指令支持 RV32 和 RV64 两种基础架构。
+对于 RV32，操作整个 `XLEN` 源寄存器。
+对于 RV64，操作源寄存器的低 `32` 位，并将结果符号扩展到 `XLEN` 位。
+虽然命名为 SHA2-256，但该指令适用于 cite:[nist:fips:180:4] 中描述的 SHA2-224 和 SHA2-256 两种参数化。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
+
+操作::
+[source,sail]
+--
+function clause execute (SHA256SIG0(rs1,rd)) = {
+  let inb    : bits(32) = X(rs1)[31..0];
+  let result : bits(32) = ror32(inb,  7) ^ ror32(inb, 18) ^ (inb >>  3);
+  X(rd)      = EXTS(result);
+  RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zknh>>
+| v1.0.0
+| 已批准
+| <<zkn>>
+| v1.0.0
+| 已批准
+| <<zk>>
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-sha256sig1, reftext="SHA2-256 Sigma1 指令"]
+==== sha256sig1
+
+概要::
+实现 SHA2-256 哈希函数中使用的 Sigma1 变换函数 cite:[nist:fips:180:4]。
+
+助记符::
+sha256sig1 rd, rs1
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x13},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x1},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 0x3},
+{bits: 5, name: 0x8},
+{bits: 2, name: 0x0},
+]}
+....
+
+描述::
+此指令支持 RV32 和 RV64 两种基础架构。
+对于 RV32，操作整个 `XLEN` 源寄存器。
+对于 RV64，操作源寄存器的低 `32` 位，并将结果符号扩展到 `XLEN` 位。
+虽然命名为 SHA2-256，但该指令适用于 cite:[nist:fips:180:4] 中描述的 SHA2-224 和 SHA2-256 两种参数化。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
+
+操作::
+[source,sail]
+--
+function clause execute (SHA256SIG1(rs1,rd)) = {
+  let inb    : bits(32) = X(rs1)[31..0];
+  let result : bits(32) = ror32(inb, 17) ^ ror32(inb, 19) ^ (inb >> 10);
+  X(rd)      = EXTS(result);
+  RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zknh>>
+| v1.0.0
+| 已批准
+| <<zkn>>
+| v1.0.0
+| 已批准
+| <<zk>>
+| v1.0.0
+| 已批准
+|===
+
+<<<
+
+[#insns-sha256sum0, reftext="SHA2-256 Sum0 指令"]
+==== sha256sum0
+
+概要::
+实现 SHA2-256 哈希函数中使用的 Sum0 变换函数 cite:[nist:fips:180:4]。
+
+助记符::
+sha256sum0 rd, rs1
+
+编码::
+[wavedrom, , svg]
+....
+{reg:[
+{bits: 7, name: 0x13},
+{bits: 5, name: 'rd'},
+{bits: 3, name: 0x1},
+{bits: 5, name: 'rs1'},
+{bits: 5, name: 0x0},
+{bits: 5, name: 0x8},
+{bits: 2, name: 0x0},
+]}
+....
+
+描述::
+此指令支持 RV32 和 RV64 两种基础架构。
+对于 RV32，操作整个 `XLEN` 源寄存器。
+对于 RV64，操作源寄存器的低 `32` 位，并将结果符号扩展到 `XLEN` 位。
+虽然命名为 SHA2-256，但该指令适用于 cite:[nist:fips:180:4] 中描述的 SHA2-224 和 SHA2-256 两种参数化。
+此指令必须 _始终_ 实现为其执行延迟不依赖于正在操作的数据。
+
+操作::
+[source,sail]
+--
+function clause execute (SHA256SUM0(rs1,rd)) = {
+  let inb    : bits(32) = X(rs1)[31..0];
+  let result : bits(32) = ror32(inb,  2) ^ ror32(inb, 13) ^ ror32(inb, 22);
+  X(rd)      = EXTS(result);
+  RETIRE_SUCCESS
+}
+--
+
+包含于::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+| <<zknh>>
+| v1.0.0
+| 已批准
+| <<zkn>>
+| v1.0.0
+| 已批准
+| <<zk>>
+| v1.0.0
+| 已批准
+|===

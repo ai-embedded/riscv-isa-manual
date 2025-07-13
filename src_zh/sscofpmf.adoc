@@ -72,3 +72,88 @@ LCOFIP 位在处理一个或多个计数溢出导致计数溢出中断之前由�
 此寄存器使 supervisor 级溢出中断处理程序软件能够快速轻松地确定哪些计数器已溢出（无需进行执行环境调用或一系列调用最终到 M 模式）。
 
 对位 _X_ 的读取受相同的 mcounteren（或 mcounteren 和 hcounteren）CSR 的限制，这些 CSR 介导 S 模式（或 VS 模式）对 hpmcounter CSR 的访问。在 M 模式下，scountovf 位 _X_ 始终可读。在 S/HS 模式下，当 mcounteren 位 _X_ 设置时，scountovf 位 _X_ 可读，否则读取为零。同样，在 VS 模式下，当 mcounteren 位 _X_ 和 hcounteren 位 _X_ 都设置时，scountovf 位 _X_ 可读，否则读取为零。
+
+=== 性能监控中断处理
+
+计数溢出中断为性能监控软件提供了及时响应计数器溢出的机制：
+
+1. **中断生成**：当启用的计数器溢出且 OF 位为零时，硬件设置 OF 位并生成中断请求。
+
+2. **中断待处理**：中断请求最终设置 mip/sip 寄存器中的 LCOFIP 位。
+
+3. **中断处理**：软件中断处理程序可以：
+   - 检查 scountovf 寄存器确定哪些计数器溢出
+   - 重置相关的 OF 位和计数器值
+   - 清除 LCOFIP 位
+   - 执行必要的性能分析操作
+
+=== 软件使用指南
+
+**典型使用模式**：
+
+```
+# 初始化性能监控
+# 1. 设置事件选择器
+li t0, EVENT_SELECTOR
+csrw mhpmevent3, t0
+
+# 2. 清除 OF 位并设置模式过滤（例如只监控用户模式）
+li t0, (EVENT_SELECTOR | UINH_CLEAR | MINH_SET | SINH_SET)
+csrw mhpmevent3, t0
+
+# 3. 初始化计数器起始值（例如 -1000 表示计数1000次后溢出）
+li t0, -1000
+csrw mhpmcounter3, t0
+
+# 4. 启用计数溢出中断
+li t0, LCOFIE_BIT
+csrs mie, t0
+```
+
+**中断处理程序示例**：
+
+```
+overflow_handler:
+    # 读取溢出状态
+    csrr t0, scountovf
+    
+    # 处理每个溢出的计数器
+    li t1, 1
+process_overflow:
+    and t2, t0, t1
+    beqz t2, next_counter
+    
+    # 处理计数器溢出
+    # - 记录性能数据
+    # - 重置计数器和 OF 位
+    # - 更新统计信息
+    
+next_counter:
+    slli t1, t1, 1
+    bnez t1, process_overflow
+    
+    # 清除中断待处理位
+    li t0, LCOFIP_BIT
+    csrc mip, t0
+    
+    mret
+```
+
+=== 实现注意事项
+
+**硬件实现**：
+- OF 位必须在计数器溢出时自动设置
+- 中断生成逻辑必须考虑 OF 位状态
+- scountovf 寄存器必须反映实际的 OF 位状态
+
+**软件实现**：
+- 中断处理程序必须是可重入的
+- 必须正确处理多个计数器同时溢出的情况
+- 需要考虑特权级别转换的影响
+
+**性能考虑**：
+- 频繁的溢出中断可能影响系统性能
+- 软件应该选择合适的计数器初值以平衡精度和开销
+- 中断处理程序应该尽可能高效
+
+这个扩展为 RISC-V 系统提供了标准化的性能监控溢出处理机制，使得操作系统和性能分析工具能够更有效地监控和分析系统性能。

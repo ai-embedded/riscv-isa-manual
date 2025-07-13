@@ -86,3 +86,246 @@ supervisor 级 `sstateen` CSR 中的位不能是只读一，除非在匹配的 `
 
 这些额外的 CSR 并非原始提案的明确部分，因为尚不清楚它们是否会需要，并且据信第一组（编号 0-3 的寄存器）的位消耗速度足够慢，任何迫在眉睫的短缺都将在许多年前被感知。目前，甚至不知道耗尽 `mstateen0`、`sstateen0` 和 `hstateen0` 需要多少年。
 ====
+
+与 `counteren` CSR 一样，当 `stateen` CSR 阻止低特权级别访问状态时，在这些特权模式之一中尝试执行读取或写入受保护状态的指令会引发非法指令异常，或者如果在 VS 或 VU 模式下执行且适用虚拟指令异常的情况，则引发虚拟指令异常而不是非法指令异常。
+
+当未实现此扩展时，所有由扩展添加的状态都可以按照该扩展的定义访问。
+
+当 `stateen` CSR 阻止特权模式访问状态时，尝试在该特权模式下执行_隐式_更新状态而不读取状态的指令可能会或可能不会引发非法指令或虚拟指令异常。此类情况必须通过明确指定某种方式来消除歧义。
+
+在某些情况下，`stateen` CSR 的位将具有双重目的，作为引入受控状态的ISA扩展的使能。
+
+supervisor级别 `sstateen` CSR 的每一位控制用户级别访问（从 U 模式或 VU 模式）扩展的状态。意图是从最低有效端（位 0）开始分配 `sstateen` CSR 的位，一直到位 31，然后到下一个更高编号的 `sstateen` CSR。
+
+对于 `sstateen` CSR 中具有定义目的的每一位，在匹配的 `mstateen` CSR 中定义相同的位，以控制机器级别以下对相同状态的访问。`mstateen` CSR 的高 32 位（或对于 RV32，相应的高半部分 CSR）控制对本质上用户级别无法访问的状态的访问，因此不适用 supervisor 级别 `sstateen` CSR 中的相应使能位。意图是从最高有效端（位 63）开始为此目的分配位，一直到位 32，然后到下一个更高的 `mstateen` CSR。如果从最低有效端为 `sstateen` CSR 分配位的速率足够低，则可能允许从 `mstateen` CSR 的最高有效端分配侵占低 32 位，然后跳到下一个更高的 `mstateen` CSR。在这种情况下，"侵占"位的位位置将在匹配的 `sstateen` CSR 中永远保持只读零。
+
+对于 hypervisor 扩展，`hstateen` CSR 具有与 `mstateen` CSR 相同的编码，只是控制虚拟机的访问（从 VS 和 VU 模式）。
+
+`stateen` CSR 的每个标准定义位都是 WARL，并且可能是只读零或一，受以下条件约束。
+
+任何 `stateen` CSR 中定义为控制 hart 未实现状态的位对于该 hart 是只读零。同样，所有尚未给出定义含义的保留位也是只读零。对于 `mstateen` CSR 中为零的每一位（无论是只读零还是设置为零），相同的位在匹配的 `hstateen` 和 `sstateen` CSR 中显示为只读零。对于 `hstateen` CSR 中为零的每一位（无论是只读零还是设置为零），当在 VS 模式下访问时，相同的位在 `sstateen` 中显示为只读零。
+
+supervisor 级别 `sstateen` CSR 中的位不能是只读一，除非匹配的 `mstateen` CSR 中的相同位是只读一，并且如果存在，在匹配的 `hstateen` CSR 中也是如此。`hstateen` CSR 中的位不能是只读一，除非匹配的 `mstateen` CSR 中的相同位是只读一。
+
+在复位时，所有可写的 `mstateen` 位都由硬件初始化为零。如果机器级别软件更改这些值，它负责将 `hstateen` 和 `sstateen` CSR 的相应可写位也初始化为零。每个特权级别的软件应设置其各自的 `stateen` CSR，以指示它准备允许低特权软件访问的状态。对于操作系统和虚拟机监视器，这通常意味着操作系统或虚拟机监视器准备在上下文切换时交换的状态，或者以其他方式管理。
+
+对于每个 `mstateen` CSR，位 63 被定义为控制对匹配的 `sstateen` 和 `hstateen` CSR 的访问。也就是说，`mstateen0` 的位 63 控制对 `sstateen0` 和 `hstateen0` 的访问；`mstateen1` 的位 63 控制对 `sstateen1` 和 `hstateen1` 的访问；等等。同样，每个 `hstateen` 的位 63 相应地控制对匹配的 `sstateen` CSR 的访问。
+
+如果虚拟机监视器需要为虚拟机模拟应该受 `sstateen` CSR 中位影响的扩展，则可能需要对 `sstateen` CSR 访问的这种控制。即使这种模拟不常见，也不应该被排除。
+
+机器级别软件需要相同的控制能力来模拟虚拟机监视器扩展。也就是说，机器级别需要控制对 supervisor 级别 `sstateen` CSR 的访问，以便模拟具有此类控制的 `hstateen` CSR。
+
+每个 `mstateen` CSR 的位 63 只有在未实现虚拟机监视器扩展且匹配的 supervisor 级别 `sstateen` CSR 全部为只读零时才可能是只读零。在这种情况下，机器级别软件应该模拟从 S 模式对受影响的 `sstateen` CSR 的访问尝试，忽略写入并为读取返回零。每个 `hstateen` CSR 的位 63 始终是可写的（不是只读）。
+
+=== 状态使能 0 寄存器
+
+.机器状态使能 0 寄存器 (`mstateen0`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 1, name: 'C'},
+{bits: 1, name: 'FCSR'},
+{bits: 1, name: 'JVT'},
+{bits: 51, name: 'WPRI'},
+{bits: 1, name: 'CTR'},
+{bits: 1, name: 'SRMCFG'},
+{bits: 1, name: 'P1P13'},
+{bits: 1, name: 'CONTEXT'},
+{bits: 1, name: 'IMSIC'},
+{bits: 1, name: 'AIA'},
+{bits: 1, name: 'CSRIND'},
+{bits: 1, name: 'WPRI'},
+{bits: 1, name: 'ENVCFG'},
+{bits: 1, name: 'SE0'},
+], config: {bits: 64, lanes: 4, hspace:1024}}
+....
+
+.Supervisor 状态使能 0 寄存器 (`sstateen0`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 1, name: 'C'},
+{bits: 1, name: 'FCSR'},
+{bits: 1, name: 'JVT'},
+{bits: 29, name: 'WPRI'},
+], config:{lanes: 1, hspace:1024}}
+....
+
+.Hypervisor 状态使能 0 寄存器 (`hstateen0`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 1, name: 'C'},
+{bits: 1, name: 'FCSR'},
+{bits: 1, name: 'JVT'},
+{bits: 51, name: 'WPRI'},
+{bits: 1, name: 'CTR'},
+{bits: 2, name: 'WPRI'},
+{bits: 1, name: 'CONTEXT'},
+{bits: 1, name: 'IMSIC'},
+{bits: 1, name: 'AIA'},
+{bits: 1, name: 'CSRIND'},
+{bits: 1, name: 'WPRI'},
+{bits: 1, name: 'ENVCFG'},
+{bits: 1, name: 'SE0'},
+], config: {bits: 64, lanes: 4, hspace:1024}}
+....
+
+C 位控制对任何和所有自定义状态的访问。这些寄存器的 C 位本身不是自定义状态；它是标准 CSR（`mstateen0`、`hstateen0` 或 `sstateen0`）的标准字段。
+
+[NOTE]
+====
+仅由于此位值的变化，非标准扩展必须满足的合规要求不会放松。特别地，如果软件设置此位但不执行任何自定义指令或访问任何自定义状态，软件必须继续按照所有相关 RISC-V 标准规定的方式执行，否则硬件不符合标准。
+====
+
+FCSR 位控制对 `fcsr` 的访问，用于浮点指令在 `x` 寄存器上操作而不是 `f` 寄存器的情况，如 Zfinx 和相关扩展（Zdinx 等）所指定。当 `misa.F` = 1 时，`mstateen0` 的 FCSR 位是只读零（因此在 `hstateen0` 和 `sstateen0` 中也是只读零）。为方便起见，当实现 `stateen` CSR 且 `misa.F` = 0 时，如果控制 `stateen0` CSR 的 FCSR 位为零，则所有浮点指令都会引起非法指令异常（或虚拟指令异常，如果相关），就好像它们都访问 `fcsr` 一样，无论它们是否真的访问。
+
+JVT 位控制对 Zcmt 扩展提供的 `jvt` CSR 的访问。
+
+`mstateen0` 中的 SE0 位控制对 `hstateen0`、`hstateen0h` 和 `sstateen0` CSR 的访问。`hstateen0` 中的 SE0 位控制对 `sstateen0` CSR 的访问。
+
+`mstateen0` 中的 ENVCFG 位控制对 `henvcfg`、`henvcfgh` 和 `senvcfg` CSR 的访问。`hstateen0` 中的 ENVCFG 位控制对 `senvcfg` CSR 的访问。
+
+`mstateen0` 中的 CSRIND 位控制对 Sscsrind 扩展提供的 `siselect`、`sireg*`、`vsiselect` 和 `vsireg*` CSR 的访问。`hstateen0` 中的 CSRIND 位控制对 Sscsrind 扩展提供的 `siselect` 和 `sireg*`（实际是 `vsiselect` 和 `vsireg*`）CSR 的访问。
+
+`mstateen0` 中的 IMSIC 位控制对 IMSIC 状态（包括 Ssaia 扩展提供的 CSR `stopei` 和 `vstopei`）的访问。`hstateen0` 中的 IMSIC 位控制对客户 IMSIC 状态（包括 Ssaia 扩展提供的 CSR `stopei`（实际是 `vstopei`））的访问。
+
+[NOTE]
+====
+将 `hstateen0` 中的 IMSIC 位设置为零可防止虚拟机访问 hart 的 IMSIC，与设置 `hstatus`.VGEIN = 0 相同。
+====
+
+`mstateen0` 中的 AIA 位控制对 Ssaia 扩展引入的所有状态的访问，这些状态不受 CSRIND 或 IMSIC 位控制。`hstateen0` 中的 AIA 位控制对 Ssaia 扩展引入的所有状态的访问，这些状态不受 `hstateen0` 的 CSRIND 或 IMSIC 位控制。
+
+`mstateen0` 中的 CONTEXT 位控制对 Sdtrig 扩展提供的 `scontext` 和 `hcontext` CSR 的访问。`hstateen0` 中的 CONTEXT 位控制对 Sdtrig 扩展提供的 `scontext` CSR 的访问。
+
+`mstateen0` 中的 P1P13 位控制对特权规范版本 1.13 引入的 `hedelegh` 的访问。
+
+`mstateen0` 中的 SRMCFG 位控制对 Ssqosid 扩展引入的 `srmcfg` CSR 的访问。
+
+=== 状态使能 1 寄存器
+
+.机器状态使能 1 寄存器 (`mstateen1`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 64, name: 'WPRI'},
+], config:{lanes: 2, hspace:1024}}
+....
+
+.Supervisor 状态使能 1 寄存器 (`sstateen1`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 32, name: 'WPRI'},
+], config:{lanes: 1, hspace:1024}}
+....
+
+.Hypervisor 状态使能 1 寄存器 (`hstateen1`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 64, name: 'WPRI'},
+], config:{lanes: 2, hspace:1024}}
+....
+
+当前，所有位都保留为将来使用。
+
+=== 状态使能 2 寄存器
+
+.机器状态使能 2 寄存器 (`mstateen2`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 64, name: 'WPRI'},
+], config:{lanes: 2, hspace:1024}}
+....
+
+.Supervisor 状态使能 2 寄存器 (`sstateen2`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 32, name: 'WPRI'},
+], config:{lanes: 1, hspace:1024}}
+....
+
+.Hypervisor 状态使能 2 寄存器 (`hstateen2`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 64, name: 'WPRI'},
+], config:{lanes: 2, hspace:1024}}
+....
+
+当前，所有位都保留为将来使用。
+
+=== 状态使能 3 寄存器
+
+.机器状态使能 3 寄存器 (`mstateen3`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 64, name: 'WPRI'},
+], config:{lanes: 2, hspace:1024}}
+....
+
+.Supervisor 状态使能 3 寄存器 (`sstateen3`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 32, name: 'WPRI'},
+], config:{lanes: 1, hspace:1024}}
+....
+
+.Hypervisor 状态使能 3 寄存器 (`hstateen3`)
+[wavedrom, ,svg]
+....
+{reg: [
+{bits: 64, name: 'WPRI'},
+], config:{lanes: 2, hspace:1024}}
+....
+
+当前，所有位都保留为将来使用。
+
+=== 使用指南
+
+在复位时将机器级 `mstateen` CSR 的可写位初始化为零后，机器级软件可以设置这些寄存器中的位来启用较低特权级别对受控状态的访问。这可能是因为机器级软件知道如何交换状态，或者更可能是因为机器级软件不交换 supervisor 级环境。（回想一下，`mstateen` CSR 必须存在的主要原因是机器级可以模拟 hypervisor 扩展。当机器级不模拟 hypervisor 扩展时，可能不需要将任何实现的 `mstateen` 位保持为零。）
+
+如果机器级将任何可写的 `mstateen` 位设置为非零，则必须通过向匹配的 `hstateen` CSR（如果存在）写入零来初始化它们。如果任何设置为一的 `mstateen` 位在 `sstateen` CSR 中有匹配位，机器级软件还必须通过向这些 `sstateen` CSR 写入零来初始化它们。通常，机器级软件将希望设置所有 `mstateen` CSR 的位 63，这要求它将零写入所有 `hstateen` CSR。
+
+软件应确保在首次进入 supervisor 级操作系统时，`sstateen` CSR 的所有可写位都初始化为零。然后操作系统可以设置这些寄存器中的位来启用用户级对受控状态的访问，这可能是因为它知道如何上下文交换状态。
+
+对于通过相应 `hstateen` CSR 的位 63 允许客户操作系统访问的 `sstateen` CSR，hypervisor 必须将 `sstateen` CSR 包含在它为客户操作系统交换的上下文中。当它启动新的客户操作系统时，必须确保这些 `sstateen` CSR 的可写位初始化为零，并且必须模拟对任何其他 `sstateen` CSR 的访问。
+
+如果任何特权级别的软件不支持较低特权级别的多个上下文，则它可以选择通过将全一值写入其级别的 `stateen` CSR（机器级的 `mstateen` CSR、操作系统的 `sstateen` CSR 以及 hypervisor 的 `hstateen` CSR），来最大化较低特权级别对所有状态的访问，而无需知道它所授予访问的所有状态。这是合理的，因为当该级别只存在一个上下文时，较低特权级别的执行上下文之间不存在隐蔽通道风险。这种情况预计在机器级很常见，也可能出现在例如仅托管单个客户虚拟机的类型 1 hypervisor 中。
+
+[NOTE]
+====
+如果预期需要，`stateen` CSR 集合将来可以通过添加以下内容来翻倍：
+
+* `0x38C mstateen4`、`0x39C mstateen4h`
+
+* `0x38D mstateen5`、`0x39D mstateen5h`
+
+* `0x38E mstateen6`、`0x39E mstateen6h`
+
+* `0x38F mstateen7`、`0x39F mstateen7h`
+
+* `0x18C sstateen4`
+
+* `0x18D sstateen5`
+
+* `0x18E sstateen6`
+
+* `0x18F sstateen7`
+
+* `0x68C hstateen4`、`0x69C hstateen4h`
+
+* `0x68D hstateen5`、`0x69D hstateen5h`
+
+* `0x68E hstateen6`、`0x69E hstateen6h`
+
+* `0x68F hstateen7`、`0x69F hstateen7h`
+
+这些额外的 CSR 不是原始提案的明确部分，因为尚不清楚是否需要它们，并且据信第一组（编号 0-3 的寄存器）中位的消耗速度将足够慢，以至于任何迫在眉睫的短缺都将在许多年前被察觉。目前，甚至不知道耗尽 `mstateen0`、`sstateen0` 和 `hstateen0` 需要多少年。
+====

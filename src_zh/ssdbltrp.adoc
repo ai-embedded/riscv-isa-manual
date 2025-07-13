@@ -5,4 +5,37 @@ Ssdbltrp 扩展解决了低于 M 模式的特权模式下的双重陷阱（参�
 
 Ssdbltrp 扩展添加了 `menvcfg`.DTE（参见 <<sec:menvcfg>>）和 `sstatus`.SDT 字段（参见 <<sstatus>>）。如果还实现了 hypervisor 扩展，则该扩展会添加 `henvcfg`.DTE（参见 <<sec:henvcfg>>）和 `vsstatus`.SDT 字段（参见 <<vsstatus>>）。
 
+=== 双重陷阱启用机制
+
+**DTE（Double Trap Enable）字段**：
+- 在 `menvcfg` 和 `henvcfg` 寄存器中启用双重陷阱处理
+- 当设置时，允许较高特权级别处理较低特权级别的双重陷阱
+
+**SDT（Supervisor Double Trap）字段**：
+- 在 `sstatus` 和 `vsstatus` 寄存器中标示双重陷阱状态
+- 用于标识当前是否处于双重陷阱处理过程中
+
+=== 双重陷阱处理层次
+
+1. **M 模式处理 S/HS 模式双重陷阱**：
+   - 当 `menvcfg`.DTE 设置时启用
+   - 允许 M 模式软件处理 S/HS 模式中的双重陷阱
+   - 用于操作系统级别的关键错误处理
+
+2. **HS 模式处理 VS 模式双重陷阱**：
+   - 当 `henvcfg`.DTE 设置时启用
+   - 允许 hypervisor 处理虚拟机中的双重陷阱
+   - 用于虚拟化环境中的错误隔离和处理
+
+=== 与其他扩展的协作
+
+**与 Smdbltrp 扩展的关系**：
+- Smdbltrp 处理 M 模式的双重陷阱
+- Ssdbltrp 扩展该机制到较低特权级别
+- 两者共同提供完整的双重陷阱处理框架
+
+**与 hypervisor 扩展的集成**：
+- 在虚拟化环境中提供额外的错误处理能力
+- 支持虚拟机和 hypervisor 之间的错误隔离
+
 有关操作细节，请参见 <<supv-double-trap>>。

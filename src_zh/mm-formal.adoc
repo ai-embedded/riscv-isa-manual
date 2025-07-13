@@ -704,6 +704,154 @@ empty rmw & (fre;coe) as Atomic
 
 上述转换条件的一个结果是，store-release-RCsc 内存存储操作不能转发到 load-acquire-RCsc 指令：latexmath:[$msoss$] 不包括来自已完成存储的内存存储操作（因为这些必须是已传播的内存存储操作），并且上述条件要求当加载是 acquire-RCsc 时，所有程序顺序先前的 store-releases-RCsc 都已完成。
 ====
+
+Write_reg(`x1`, `0x42`, Done)。许多 Internal(_next_state_) 状态可能出现在上述状态之前和之间。
+====
+请注意，写入内存分为两个步骤，Store_ea 和 Store_memv：第一个步骤使存储的内存占用初步确定，第二个步骤添加要存储的值。我们确保这些在伪代码中配对（Store_ea 后跟 Store_memv），但它们之间可能有其他步骤。
+[NOTE]
+====
+可以观察到 Store_ea 可以在确定要存储的值之前发生。例如，对于 litmus 测试 LB+fence.r.rw+data-po 要被操作模型允许（就像 RVWMO 一样），Hart 1 中的第一个存储必须在确定其值之前执行 Store_ea 步骤，以便第二个存储可以看到它是一个不重叠的内存占用，从而允许第二个存储乱序提交而不会违反一致性。
+====
+每个指令的伪代码最多执行一个存储或一个加载，除了执行一个加载和一个存储的 AMO。然后，这些内存访问被 hart 语义分解为架构原子单元（参见下面的 <<initiate_load, 启动内存加载操作>> 和 <<initiate_store_footprint, 启动内存存储操作占用>>）。
+
+非正式地，寄存器读取的每个位都应从最近的（按程序顺序）指令实例的寄存器写入中满足，该指令实例可以写入该位（如果不存在此类写入，则从 hart 的初始寄存器状态中满足）。因此，了解每个指令实例的寄存器写入占用至关重要，我们在创建指令实例时计算该占用（参见下面的 <<fetch, 获取指令>> 操作）。我们确保在伪代码中，每个指令最多对每个寄存器位执行一次寄存器写入，并且它不会尝试读取刚刚写入的寄存器值。
+
+模型中的数据流依赖（地址和数据）源于每个寄存器读取必须等待相应的寄存器写入执行（如上所述）。
+
+[[inst_state]]
+==== 指令实例状态
+
+每个指令实例 __i_ 具有一个状态，包括：
+
+* _program_loc_，指令获取的内存地址；
+* _instruction_kind_，标识这是否是加载、存储、AMO、栅栏、分支/跳转或 `simple` 指令（这也包括一个类似于伪代码执行状态中描述的 _kind_）；
+* _src_regs_，源 _reg_name_s 的集合（包括系统寄存器），根据指令的伪代码静态确定；
+* _dst_regs_，目标 _reg_name_s 的集合（包括系统寄存器），根据指令的伪代码静态确定；
+* _pseudocode_state_（有时简称为 `state`），以下之一（这是一个带标签的联合；标签为小写）： +
+
+
+[cols="<,<",grid="none"]
+|===
+|Plain(_isa_state_) |- 准备进行伪代码转换
+
+|Pending_mem_loads(_load_continuation_) |- 请求内存加载操作
+
+|Pending_mem_stores(_store_continuation_) |- 请求内存存储操作
+|===
+* _reg_reads_，实例已执行的寄存器读取，包括每个读取的寄存器写入切片；
+* _reg_writes_，实例已执行的寄存器写入；
+* _mem_loads_，内存加载操作的集合，以及每个操作的未满足切片（尚未满足的字节索引），以及对于已满足的切片，满足它的存储切片（每个切片由一个内存存储操作及其字节索引的子集组成）。
+* _mem_stores_，内存存储操作的集合，以及每个操作的已传播（传递到共享内存）或未传播的标志。
+* 记录实例是否已提交、完成等的信息。
+
+每个内存加载操作包括一个内存占用（地址和大小）。每个内存存储操作包括一个内存占用，以及（如果可用）一个值。
+
+具有非空 _mem_loads_ 的加载指令实例，其所有加载操作都已满足（即没有未满足的切片），被称为 _完全满足_。
+
+非正式地，如果加载（和 `sc`）指令提供其源寄存器已完成，则指令实例被认为具有 _完全确定的数据_。同样，如果加载（和 `sc`）指令提供其内存操作地址寄存器已完成，则它被认为具有 _完全确定的内存占用_。形式上，我们首先定义 _完全确定的寄存器写入_ 的概念：指令实例 latexmath:[$i$] 的 _reg_writes_ 中的寄存器写入 latexmath:[$w$] 被认为是 _完全确定的_，如果满足以下条件之一：
+
+. latexmath:[$i$] 已完成；或
+. latexmath:[$w$] 写入的值不受 latexmath:[$i$] 已进行的内存操作的影响（即从内存加载的值或 `sc` 的结果），并且对于 latexmath:[$i$] 已进行的每个寄存器读取，如果它影响 latexmath:[$w$]，则 latexmath:[$i$] 读取的寄存器写入是完全确定的（或 latexmath:[$i$] 从初始寄存器状态读取）。
+
+现在，如果对于 _reg_reads_ 中的每个寄存器读取 latexmath:[$r$]，latexmath:[$r$] 读取的寄存器写入是完全确定的，则指令实例 latexmath:[$i$] 被认为具有 _完全确定的数据_。如果对于 _reg_reads_ 中每个提供给 latexmath:[$i$] 的内存操作地址寄存器读取 latexmath:[$r$]，latexmath:[$r$] 读取的寄存器写入是完全确定的，则指令实例 latexmath:[$i$] 被认为具有 _完全确定的内存占用_。
+[NOTE]
+====
+`rmem` 工具记录了每个寄存器写入，该指令在执行写入时已读取的其他指令的寄存器写入集。通过仔细安排工具涵盖的指令的伪代码，我们能够使其恰好是写入所依赖的寄存器写入集。
+====
+
+==== Hart 状态
+
+单个 hart 的模型状态包括：
+
+* _hart_id_，hart 的唯一标识符；
+* _initial_register_state_，每个寄存器的初始寄存器值；
+* _initial_fetch_address_，初始指令获取地址；
+* _instruction_tree_，已获取（且未丢弃）的指令实例树，按程序顺序排列。
+
+==== 共享内存状态
+
+共享内存的模型状态包括内存存储操作列表，按其传播到共享内存的顺序排列。
+
+当存储操作传播到共享内存时，它只是添加到列表的末尾。当加载操作从内存中满足时，对于加载操作的每个字节，返回最近的相应存储切片。
+[NOTE]
+====
+对于大多数目的，将共享内存视为数组更简单，即从内存位置到内存存储操作切片的映射，其中每个内存位置映射到该位置最近的内存存储操作的一个字节切片。然而，这种抽象不够详细，无法正确处理 `sc` 指令。RVWMO 允许与 `sc` 相同的 hart 的存储操作在 `sc` 的存储操作和配对 `lr` 读取的存储操作之间介入。为了允许此类存储操作介入并禁止其他操作，必须扩展数组抽象以记录更多信息。这里，我们使用列表，因为它非常简单，但更高效和可伸缩的实现可能应该使用更好的东西。
+====
+
+[[transitions]]
+==== 转换
+
+以下每个段落描述了一种类型的系统转换。描述从当前系统状态的条件开始。转换只能在满足条件的当前状态下进行。条件之后是应用于该状态的操作，以便在进行转换时生成新的系统状态。
+
+[[fetch]]
+===== 获取指令
+
+指令实例 latexmath:[$i$] 的可能程序顺序后继可以从地址 _loc_ 获取，如果：
+
+. 它尚未被获取，即 hart 的 _instruction_tree_ 中 latexmath:[$i$] 的任何直接后继都不是来自 _loc_；并且
+. 如果 latexmath:[$i$] 的伪代码已将地址写入 _pc_，则 _loc_ 必须是该地址，否则 _loc_ 是：
+* 对于条件分支，后继地址或分支目标地址；
+* 对于（直接）跳转和链接指令 (`jal`)，目标地址；
+* 对于间接跳转指令 (`jalr`)，任何地址；并且
+* 对于任何其他指令，latexmath:[$i.\textit{program\_loc}+4$]。
+
+操作：为程序内存中 _loc_ 处的指令构造一个全新初始化的指令实例 latexmath:[$i'$]，其状态为 Plain(_isa_state_)，根据指令伪代码计算，包括伪代码中可用的静态信息，例如其 _instruction_kind_、_src_regs_ 和 _dst_regs_，并将 latexmath:[$i'$] 添加到 hart 的 _instruction_tree_ 中作为 latexmath:[$i$] 的后继。
+
+可能的下一个获取地址 (_loc_) 在获取 latexmath:[$i$] 后立即可用，模型无需等待伪代码写入 _pc_；这允许乱序执行，以及条件分支和跳转的推测。对于大多数指令，这些地址可以很容易地从指令伪代码中获取。唯一的例外是间接跳转指令 (`jalr`)，其中地址取决于寄存器中保存的值。原则上，数学模型应该允许在此处推测到任意地址。`rmem` 工具中的穷举搜索通过多次运行穷举搜索来处理此问题，每次搜索都为每个间接跳转提供一组不断增长的可能下一个获取地址。初始搜索使用空集，因此在指令伪代码写入 _pc_ 之前，间接跳转指令之后没有获取，然后我们使用该值获取下一条指令。在开始下一次穷举搜索迭代之前，我们为每个间接跳转（按代码位置分组）收集它在先前搜索迭代的所有执行中写入 _pc_ 的值集，并将其用作指令的可能下一个获取地址。当没有检测到新的获取地址时，此过程终止。
+
+[[initiate_load]]
+===== 启动内存加载操作
+
+状态为 Plain(Load_mem(_kind_, _address_, _size_, _load_continuation_)) 的指令实例 latexmath:[$i$] 总是可以启动相应的内存加载操作。操作：
+
+. 构造适当的内存加载操作 latexmath:[$mlos$]：
+* 如果 _address_ 对齐到 _size_，则 latexmath:[$mlos$] 是从 _address_ 开始的 _size_ 字节的单个内存加载操作；
+* 否则，latexmath:[$mlos$] 是一组 _size_ 个内存加载操作，每个操作一个字节，从地址 latexmath:[$\textit{address}\ldots\textit{address}+\textit{size}-1$] 开始。
+. 将 latexmath:[$i.\textit{mem\_loads}$] 设置为 latexmath:[$mlos$]；并且
+. 将 latexmath:[$i$] 的状态更新为 Pending_mem_loads(_load_continuation_)。
+[NOTE]
+====
+在 <<rvwmo-primitives>> 中，据说未对齐的内存访问可以以任何粒度分解。这里我们将其分解为单字节访问，因为此粒度包含所有其他粒度。
+====
+[[sat_by_forwarding]]
+===== 通过未传播的存储转发满足内存加载操作
+
+对于状态为 Pending_mem_loads(_load_continuation_) 的非 AMO 加载指令实例 latexmath:[$i$]，以及 latexmath:[$i.\textit{mem\_loads}$] 中具有未满足切片的内存加载操作 latexmath:[$mlo$]，可以通过从程序顺序先于 latexmath:[$i$] 且已计算要存储的值的未传播内存存储操作的存储指令实例转发来部分或完全满足内存加载操作，如果：
+
+. 所有程序顺序先前的 `fence` 指令（设置了 `.sr` 和 `.pw`）都已完成；
+. 对于每个程序顺序先前的 `fence` 指令 latexmath:[$f$]，如果设置了 `.sr` 和 `.pr` 且未设置 `.pw`，则如果 latexmath:[$f$] 未完成，则所有程序顺序先于 latexmath:[$f$] 的加载指令都已完全满足；
+. 对于每个程序顺序先前的 `fence.tso` 指令 latexmath:[$f$]，如果未完成，则所有程序顺序先于 latexmath:[$f$] 的加载指令都已完全满足；
+. 如果 latexmath:[$i$] 是 load-acquire-RCsc，则所有程序顺序先前的 store-releases-RCsc 都已完成；
+. 如果 latexmath:[$i$] 是 load-acquire-release，则所有程序顺序先前的指令都已完成；
+. 所有未完成的程序顺序先前的 load-acquire 指令都已完全满足；并且
+. 所有程序顺序先前的 store-acquire-release 指令都已完成；
+
+令 latexmath:[$msoss$] 为来自非 `sc` 存储指令实例的所有未传播内存存储操作切片集，这些实例程序顺序先于 latexmath:[$i$] 且已计算要存储的值，与 latexmath:[$mlo$] 的未满足切片重叠，并且未被介入的存储操作或被介入的加载读取的存储操作取代。最后一个条件要求，对于来自指令 latexmath:[$i'$] 的 latexmath:[$msoss$] 中的每个内存存储操作切片 latexmath:[$msos$]：
+
+* 在 latexmath:[$i$] 和 latexmath:[$i'$] 之间没有存储指令，其内存存储操作与 latexmath:[$msos$] 重叠；并且
+* 在 latexmath:[$i$] 和 latexmath:[$i'$] 之间没有加载指令，该指令从来自不同 hart 的重叠内存存储操作切片中满足。
+
+操作：
+
+. 更新 latexmath:[$i.\textit{mem\_loads}$] 以指示 latexmath:[$mlo$] 已由 latexmath:[$msoss$] 满足；并且
+. 重新启动任何因此违反一致性的推测性指令，即，对于每个非完成指令 latexmath:[$i'$]（它是 latexmath:[$i$] 的程序顺序后继），以及 latexmath:[$i'$] 的每个内存加载操作 latexmath:[$mlo'$]（它已从 latexmath:[$msoss'$] 满足），如果 latexmath:[$msoss'$] 中存在内存存储操作切片 latexmath:[$msos'$]，并且 latexmath:[$msoss$] 中存在来自不同内存存储操作的重叠内存存储操作切片，并且 latexmath:[$msos'$] 不是来自 latexmath:[$i$] 的程序顺序后继指令，则重新启动 latexmath:[$i'$] 及其 _restart-dependents_。
+
+其中，指令 latexmath:[$j$] 的 _restart-dependents_ 是：
+
+* latexmath:[$j$] 的程序顺序后继，它们对 latexmath:[$j$] 的寄存器写入具有数据流依赖；
+* latexmath:[$j$] 的程序顺序后继，它们具有从 latexmath:[$j$] 的内存存储操作读取的内存加载操作（通过转发）；
+* 如果 latexmath:[$j$] 是 load-acquire，则 latexmath:[$j$] 的所有程序顺序后继；
+* 如果 latexmath:[$j$] 是加载，对于每个 `fence` latexmath:[$f$]，如果设置了 `.sr` 和 `.pr` 且未设置 `.pw`，并且它是 latexmath:[$j$] 的程序顺序后继，则所有程序顺序后继 latexmath:[$f$] 的加载指令；
+* 如果 latexmath:[$j$] 是加载，对于每个 `fence.tso` latexmath:[$f$]，它是 latexmath:[$j$] 的程序顺序后继，则所有程序顺序后继 latexmath:[$f$] 的加载指令；并且
+* （递归地）所有上述指令实例的所有 restart-dependents。
+[NOTE]
+====
+转发内存存储操作到内存加载可能只满足加载的某些切片，留下其他切片未满足。
+
+在执行上述转换时不可用的程序顺序先前存储操作，当它可用时，可能会使 latexmath:[$msoss$] 暂时不健全（违反一致性）。该存储将阻止加载完成（参见 <<finish, 完成指令>>），并在该存储操作传播时导致其重新启动（参见 <<prop_store, 传播存储操作>>）。
+
+上述转换条件的一个结果是，store-release-RCsc 内存存储操作不能转发到 load-acquire-RCsc 指令：latexmath:[$msoss$] 不包括来自已完成存储的内存存储操作（因为这些必须是已传播的内存存储操作），并且上述条件要求当加载是 acquire-RCsc 时，所有程序顺序先前的 store-releases-RCsc 都已完成。
+====
 [[sat_from_mem]]
 ===== 从内存满足内存加载操作
 

@@ -1302,3 +1302,2455 @@ STORE-FP 主操作码下的向量存储全寄存器指令格式
   {bits: 5, name: 8, attr: 'sumop'},
   {bits: 1, name: 1, attr: 'vm'},
   {bits: 2, name: 0x100, attr: 'mop'},
+  {bits: 1, name: 0x100, attr: 'mew'},
+  {bits: 3, name: 'nf'},
+]}
+....
+
+这些指令加载和存储整个向量寄存器组。
+
+NOTE: 这些指令旨在在不知道向量寄存器当前内容的类型或长度时，或者修改 `vl` 和 `vtype` 成本较高时使用。示例包括编译器寄存器溢出、在向量寄存器中传递值的向量函数调用、中断处理程序和操作系统上下文切换。软件可以通过读取 `vlenb` 寄存器来确定传输的字节数。
+
+加载指令在 `mew` 和 `width` 字段中编码了 EEW，遵循常规单位步长加载的模式。
+
+NOTE: 由于寄存器内字节布局与内存中字节布局相同，无论 EEW 如何，都会将相同的数据写入目标寄存器组。因此，仅提供 EEW=8 变体就足够了。提供完整的 EEW 变体集是为了让编码的 EEW 可以用作提示，表明目标寄存器组接下来将使用此 EEW 访问，这有助于内部重新排列数据的实现。
+
+向量全寄存器存储指令的编码类似于 EEW=8 元素的无掩码单位步长存储。
+
+`nf` 字段使用 NFIELDS 编码（图 <<fig-nf>>）编码要加载和存储多少个向量寄存器。编码的寄存器数量必须是 2 的幂，向量寄存器编号必须像向量寄存器组一样对齐，否则指令编码是保留的。NFIELDS 表示要传输的向量寄存器数量，在基址后连续编号。仅支持 NFIELDS 值 1、2、4、8，其他值保留。当传输多个寄存器时，最低编号的向量寄存器保存在最低编号的内存地址中，后续向量寄存器编号在内存中连续放置。
+
+指令以有效向量长度 `evl`=NFIELDS*VLEN/EEW 运行，无论 `vtype` 和 `vl` 中的当前设置如何。如果 `vstart` {ge} `vl` 则不写入元素的通常属性不适用于这些指令。相反，如果 `vstart` {ge} `evl` 则不写入元素。
+
+指令的操作类似于无掩码单位步长加载和存储指令，基址在由 `rs1` 指定的标量 `x` 寄存器中传递。
+
+如果基址没有自然对齐到编码 EEW 的字节大小（EEW/8）或实现最小支持 SEW 大小的字节（SEW~MIN~/8）中较大者，则允许实现在整个寄存器加载和存储时引发未对齐地址异常。
+
+NOTE: 允许基于与编码 EEW 的非对齐引发未对齐异常简化了这些指令的实现。某些子集实现可能不支持较小的 SEW 宽度，因此即使大于编码 EEW，也允许为最小支持的 SEW 报告未对齐异常。例如，极端的非标准实现可能具有 SEW~MIN~>XLEN。软件环境可以规定最小对齐要求以支持 ABI。
+
+----
+# 全寄存器加载和存储指令格式。
+vl1r.v v3, (a0)       # 伪指令等于 vl1re8.v
+
+vl1re8.v    v3, (a0)  # 将地址 a0 中保存的 VLEN/8 字节加载到 v3
+vl1re16.v   v3, (a0)  # 将地址 a0 中保存的 VLEN/16 半字加载到 v3
+vl1re32.v   v3, (a0)  # 将地址 a0 中保存的 VLEN/32 字加载到 v3
+vl1re64.v   v3, (a0)  # 将地址 a0 中保存的 VLEN/64 双字加载到 v3
+
+vl2r.v v2, (a0)       # 伪指令等于 vl2re8.v
+
+vl2re8.v    v2, (a0)  # 从地址 a0 加载 2*VLEN/8 字节到 v2-v3
+vl2re16.v   v2, (a0)  # 将地址 a0 中保存的 2*VLEN/16 半字加载到 v2-v3
+vl2re32.v   v2, (a0)  # 将地址 a0 中保存的 2*VLEN/32 字加载到 v2-v3
+vl2re64.v   v2, (a0)  # 将地址 a0 中保存的 2*VLEN/64 双字加载到 v2-v3
+
+vl4r.v v4, (a0)       # 伪指令等于 vl4re8.v
+
+vl4re8.v    v4, (a0)  # 从地址 a0 加载 4*VLEN/8 字节到 v4-v7
+vl4re16.v   v4, (a0)
+vl4re32.v   v4, (a0)
+vl4re64.v   v4, (a0)
+
+vl8r.v v8, (a0)       # 伪指令等于 vl8re8.v
+
+vl8re8.v    v8, (a0)  # 从地址 a0 加载 8*VLEN/8 字节到 v8-v15
+vl8re16.v   v8, (a0)
+vl8re32.v   v8, (a0)
+vl8re64.v   v8, (a0)
+
+vs1r.v v3, (a1)      # 将 v3 存储到地址 a1
+vs2r.v v2, (a1)      # 将 v2-v3 存储到地址 a1
+vs4r.v v4, (a1)      # 将 v4-v7 存储到地址 a1
+vs8r.v v8, (a1)      # 将 v8-v15 存储到地址 a1
+----
+
+NOTE: 实现应对不支持的 EEW 值的 `vl<nf>r` 指令引发非法指令异常。
+
+NOTE: 我们考虑过添加全寄存器掩码加载指令（`vl1rm.v`），但决定从初始扩展中省略。主要目的是告知微架构数据将用作掩码。可以通过以下代码序列实现相同的效果，其成本最多为四条指令。其中，第一条可能可以移除，因为 `vl` 通常已经在标量寄存器中，最后一条如果后续向量指令需要新的 SEW/LMUL 可能已经存在。因此，在最佳情况下，只需要两条指令（其中只有一条执行向量操作）来合成专用指令的效果：
+----
+csrr t0, vl                        # 保存当前 vl（可能不需要）
+vsetvli t1, x0, e8, m8, ta, ma     # 最大 VLMAX
+vlm.v v0, (a0)                     # 加载掩码寄存器
+vsetvli x0, t0, <new type>         # 恢复 vl（可能已经存在）
+----
+
+=== 向量内存对齐约束
+
+如果向量内存指令访问的元素没有自然对齐到元素的大小，要么元素成功传输，要么在该元素上引发地址未对齐异常。
+
+对未对齐向量内存访问的支持独立于实现对未对齐标量内存访问的支持。
+
+NOTE: 实现可能既不支持、支持其中一种，或者两种标量和向量内存访问都支持硬件中的某些或所有未对齐访问。应定义单独的 PMA 来确定关联地址范围中是否支持向量未对齐访问。
+
+向量未对齐内存访问遵循与标量未对齐内存访问相同的原子性规则。
+
+=== 向量内存一致性模型
+
+向量内存指令在本地 hart 上按程序顺序执行。
+
+向量内存指令在指令级别遵循 RVWMO。如果实现了 Ztso 扩展，向量内存指令还在指令级别遵循 RVTSO。
+
+除了向量索引有序加载和存储外，元素操作在指令内是无序的。
+
+向量索引有序加载和存储分别按元素顺序从内存/向内存读取和写入元素，在元素级别遵循 RVWMO。
+
+NOTE: Ztso 仅在指令级别施加 RVTSO；无论是否实现 Ztso，指令内排序都遵循 RVWMO。
+
+NOTE: 需要更正式的定义。
+
+受向量长度寄存器 `vl` 影响的指令对 `vl` 有控制依赖，而不是数据依赖。类似地，掩码向量指令对源掩码寄存器有控制依赖，而不是数据依赖。
+
+NOTE: 将向量长度和掩码视为控制而不是数据通常匹配相应标量代码的语义，其中通常会使用分支指令。将掩码视为控制允许掩码向量加载指令在掩码值已知之前访问内存，无需误投机恢复机制。
+
+=== 向量算术指令格式
+
+向量算术指令使用新的主操作码（OP-V = 1010111~2~），它与 OP-FP 相邻。三位 `funct3` 字段用于定义向量指令的子类别。
+
+include::images/wavedrom/valu-format.edn[]
+
+[[sec-arithmetic-encoding]]
+==== 向量算术指令编码
+
+`funct3` 字段编码操作数类型和源位置。
+
+.funct3
+[cols="1,1,1,3,5,5"]
+|===
+3+| funct3[2:0] | 类别 | 操作数 | 标量操作数类型
+
+| 0 | 0 | 0 | OPIVV | 向量-向量    |       N/A
+| 0 | 0 | 1 | OPFVV | 向量-向量    |       N/A
+| 0 | 1 | 0 | OPMVV | 向量-向量    |       N/A
+| 0 | 1 | 1 | OPIVI | 向量-立即数 | `imm[4:0]`
+| 1 | 0 | 0 | OPIVX | 向量-标量    | GPR `x` 寄存器 `rs1`
+| 1 | 0 | 1 | OPFVF | 向量-标量    | FP `f` 寄存器 `rs1`
+| 1 | 1 | 0 | OPMVX | 向量-标量    | GPR `x` 寄存器 `rs1`
+| 1 | 1 | 1 | OPCFG | 标量-立即数     | GPR `x` 寄存器 `rs1` & `rs2`/`imm`
+|===
+
+整数操作根据操作码使用无符号或二进制补码有符号整数算术执行。
+
+NOTE: 在此讨论中，定点操作被视为整数操作。
+
+所有标准向量浮点算术操作遵循 IEEE-754/2008 标准。所有向量浮点操作使用 `frm` 寄存器中的动态舍入模式。任何向量浮点指令使用包含无效舍入模式的 `frm` 字段时——即使是那些不依赖舍入模式的指令，或当 `vl`=0 时，或当 `vstart` {ge} `vl` 时——都是保留的。
+
+NOTE: 所有向量浮点代码都将依赖 `frm` 中的有效值。实现可以使所有向量 FP 指令在舍入模式无效时报告异常，以简化控制逻辑。
+
+向量-向量操作从由 `vs2` 和 `vs1` 分别指定的向量寄存器组中获取两个操作数向量。
+
+向量-标量操作可以有三种可能的形式。在所有三种形式中，向量寄存器组操作数由 `vs2` 指定。第二个标量源操作数来自三个替代源之一：
+
+. 对于整数操作，标量可以是 5 位立即数 `imm[4:0]`，编码在 `rs1` 字段中。除非另有说明，该值符号扩展到 SEW 位。
+
+. 对于整数操作，标量可以从由 `rs1` 指定的标量 `x` 寄存器中获取。如果 XLEN>SEW，则使用 `x` 寄存器的最低有效 SEW 位，除非另有说明。如果 XLEN<SEW，则将来自 `x` 寄存器的值符号扩展到 SEW 位。
+
+. 对于浮点操作，标量可以从标量 `f` 寄存器中获取。如果 FLEN > SEW，检查 `f` 寄存器中的值是否为有效的 NaN 装箱值，在这种情况下使用 `f` 寄存器的最低有效 SEW 位，否则使用规范 NaN 值。任何浮点向量操作数的 EEW 不是支持的浮点类型宽度（包括当 FLEN < SEW 时）的向量指令都是保留的。
+
+NOTE: 某些指令 _零_ 扩展 5 位立即数，并在汇编语法中通过将立即数命名为 `uimm` 来表示这一点。
+
+NOTE: 当向 Zfinx/Zdinx/Zhinx 扩展添加向量扩展时，浮点标量参数从 `x` 寄存器中获取。这些扩展不支持 NaN 装箱，因此向量浮点标量值使用与整数标量操作数相同的规则产生（即，当 XLEN > SEW 时使用最低 SEW 位，当 XLEN < SEW 时使用符号扩展值）。
+
+向量算术指令在 `vm` 字段的控制下被掩码。
+
+----
+# 向量二元算术指令的汇编语法模式
+
+# 返回向量结果的操作，由 vm 掩码（v0.t，<nothing>）
+vop.vv  vd, vs2, vs1, vm  # 整数向量-向量      vd[i] = vs2[i] op vs1[i]
+vop.vx  vd, vs2, rs1, vm  # 整数向量-标量      vd[i] = vs2[i] op x[rs1]
+vop.vi  vd, vs2, imm, vm  # 整数向量-立即数   vd[i] = vs2[i] op imm
+
+vfop.vv  vd, vs2, vs1, vm # FP 向量-向量操作 vd[i] = vs2[i] fop vs1[i]
+vfop.vf  vd, vs2, rs1, vm # FP 向量-标量操作 vd[i] = vs2[i] fop f[rs1]
+----
+
+NOTE: 在编码中，`vs2` 是第一个操作数，而 `rs1/imm` 是第二个操作数。这与标准标量排序相反。这种安排保留了现有的编码约定，即只读取一个标量寄存器的指令从 `rs1` 读取，并且 5 位立即数从 `rs1` 字段获取。
+
+----
+# 向量三元运算指令的汇编语法模式（乘加）
+
+# 覆盖求和输入的整数操作
+vop.vv vd, vs1, vs2, vm  # vd[i] = vs1[i] * vs2[i] + vd[i]
+vop.vx vd, rs1, vs2, vm  # vd[i] = x[rs1] * vs2[i] + vd[i]
+
+# 覆盖乘积输入的整数操作
+vop.vv vd, vs1, vs2, vm  # vd[i] = vs1[i] * vd[i] + vs2[i]
+vop.vx vd, rs1, vs2, vm  # vd[i] = x[rs1] * vd[i] + vs2[i]
+
+# 覆盖求和输入的浮点操作
+vfop.vv vd, vs1, vs2, vm  # vd[i] = vs1[i] * vs2[i] + vd[i]
+vfop.vf vd, rs1, vs2, vm  # vd[i] = f[rs1] * vs2[i] + vd[i]
+
+# 覆盖乘积输入的浮点操作
+vfop.vv vd, vs1, vs2, vm  # vd[i] = vs1[i] * vd[i] + vs2[i]
+vfop.vf vd, rs1, vs2, vm  # vd[i] = f[rs1] * vd[i] + vs2[i]
+----
+
+NOTE: 对于三元乘加操作，汇编语法总是将目标向量寄存器放在第一位，然后是 `rs1` 或 `vs1`，最后是 `vs2`。这种排序为这些三元操作提供了更自然的汇编读取方式，因为乘法操作数总是彼此相邻。
+
+[[sec-widening]]
+==== 扩宽向量运算指令
+
+一些向量运算指令被定义为 __扩宽__ 操作，其中目标向量寄存器组的 EEW=2*SEW 和 EMUL=2*LMUL。这些指令通常在操作码上使用 `vw*` 前缀，或者对于向量浮点指令使用 `vfw*` 前缀。
+
+第一个向量寄存器组操作数可以是单宽度或双宽度。
+
+----
+# 向量扩宽运算指令的汇编语法模式
+
+# 双宽度结果，两个单宽度源：2*SEW = SEW op SEW
+vwop.vv  vd, vs2, vs1, vm  # 整数向量-向量     vd[i] = vs2[i] op vs1[i]
+vwop.vx  vd, vs2, rs1, vm  # 整数向量-标量     vd[i] = vs2[i] op x[rs1]
+
+# 双宽度结果，第一个源双宽度，第二个源单宽度：2*SEW = 2*SEW op SEW
+vwop.wv  vd, vs2, vs1, vm  # 整数向量-向量     vd[i] = vs2[i] op vs1[i]
+vwop.wx  vd, vs2, rs1, vm  # 整数向量-标量     vd[i] = vs2[i] op x[rs1]
+----
+
+NOTE: 最初，操作码使用 `w` 后缀，但这可能与在双字整数中使用 `w` 后缀表示字大小操作混淆，因此将 `w` 移至前缀。
+
+NOTE: 浮点扩宽操作从 `vwf*` 更改为 `vfw*`，以与任何标量扩宽浮点操作（将写作 `fw*`）更一致。
+
+扩宽指令编码必须遵循 <<sec-vec-operands>> 中的约束。
+
+[[sec-narrowing]]
+==== 收窄向量运算指令
+
+提供了一些指令将双宽度源向量转换为单宽度目标向量。这些指令将由 `vs2` 指定的、EEW/EMUL=2*SEW/2*LMUL 的向量寄存器组转换为具有当前 SEW/LMUL 设置的向量寄存器组。当存在第二个源向量寄存器组（由 `vs1` 指定）时，它具有与结果相同的（较窄）宽度（即 EEW=SEW）。
+
+NOTE: 另一种设计决策是将 SEW/LMUL 视为定义源向量寄存器组的大小。这里的选择受到相信所选方法将需要更少 `vtype` 更改的信念驱动。
+
+NOTE: 设置掩码寄存器的比较操作也隐式地是一种收窄操作。
+
+在操作码上使用 `vn*` 前缀来在汇编器中区分这些指令，或者对于收窄浮点操作码使用 `vfn*` 前缀。双宽度源向量寄存器组通过在源操作数后缀中添加 `w` 来表示（例如 `vnsra.wv`）
+
+----
+向量收窄运算指令的汇编语法模式
+
+# 单宽度结果 vd，双宽度源 vs2，单宽度源 vs1/rs1
+# SEW = 2*SEW op SEW
+vnop.wv  vd, vs2, vs1, vm  # 整数向量-向量     vd[i] = vs2[i] op vs1[i]
+vnop.wx  vd, vs2, rs1, vm  # 整数向量-标量     vd[i] = vs2[i] op x[rs1]
+----
+
+收窄指令编码必须遵循 <<sec-vec-operands>> 中的约束。
+
+[[sec-vector-integer]]
+=== 向量整数运算指令
+
+提供了一套向量整数运算指令。除非另有说明，整数操作在溢出时环绕。
+
+==== 向量单宽度整数加法和减法
+
+提供了向量整数加法和减法。还为向量-标量形式提供了反向减法指令。
+
+----
+# 整数加法
+vadd.vv vd, vs2, vs1, vm   # 向量-向量
+vadd.vx vd, vs2, rs1, vm   # 向量-标量
+vadd.vi vd, vs2, imm, vm   # 向量-立即数
+
+# 整数减法
+vsub.vv vd, vs2, vs1, vm   # 向量-向量
+vsub.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 整数反向减法
+vrsub.vx vd, vs2, rs1, vm   # vd[i] = x[rs1] - vs2[i]
+vrsub.vi vd, vs2, imm, vm   # vd[i] = imm - vs2[i]
+----
+
+NOTE: 整数值向量可以使用标量操作数为 `x0` 的反向减法指令进行取反。提供了汇编伪指令 `vneg.v vd,vs` = `vrsub.vx vd,vs,x0`。
+
+==== 向量扩宽整数加法/减法
+
+扩宽加法/减法指令提供有符号和无符号变体，取决于较窄的源操作数是首先进行符号扩展还是零扩展，然后形成双宽度和。
+
+----
+# 扩宽无符号整数加法/减法，2*SEW = SEW +/- SEW
+vwaddu.vv  vd, vs2, vs1, vm  # 向量-向量
+vwaddu.vx  vd, vs2, rs1, vm  # 向量-标量
+vwsubu.vv  vd, vs2, vs1, vm  # 向量-向量
+vwsubu.vx  vd, vs2, rs1, vm  # 向量-标量
+
+# 扩宽有符号整数加法/减法，2*SEW = SEW +/- SEW
+vwadd.vv  vd, vs2, vs1, vm  # 向量-向量
+vwadd.vx  vd, vs2, rs1, vm  # 向量-标量
+vwsub.vv  vd, vs2, vs1, vm  # 向量-向量
+vwsub.vx  vd, vs2, rs1, vm  # 向量-标量
+
+# 扩宽无符号整数加法/减法，2*SEW = 2*SEW +/- SEW
+vwaddu.wv  vd, vs2, vs1, vm  # 向量-向量
+vwaddu.wx  vd, vs2, rs1, vm  # 向量-标量
+vwsubu.wv  vd, vs2, vs1, vm  # 向量-向量
+vwsubu.wx  vd, vs2, rs1, vm  # 向量-标量
+
+# 扩宽有符号整数加法/减法，2*SEW = 2*SEW +/- SEW
+vwadd.wv  vd, vs2, vs1, vm  # 向量-向量
+vwadd.wx  vd, vs2, rs1, vm  # 向量-标量
+vwsub.wv  vd, vs2, vs1, vm  # 向量-向量
+vwsub.wx  vd, vs2, rs1, vm  # 向量-标量
+----
+
+NOTE: 整数值可以使用标量操作数为 `x0` 的扩宽加法指令将宽度加倍。提供了汇编伪指令 `vwcvt.x.x.v vd,vs,vm` = `vwadd.vx vd,vs,x0,vm` 和 `vwcvtu.x.x.v vd,vs,vm` = `vwaddu.vx vd,vs,x0,vm`。
+
+==== 向量整数扩展
+
+向量整数扩展指令将 EEW 小于 SEW 的源向量整数操作数进行零扩展或符号扩展，以填充目标中的 SEW 大小元素。源的 EEW 是 SEW 的 1/2、1/4 或 1/8，而源的 EMUL 是 (EEW/SEW)*LMUL。目标的 EEW 等于 SEW，EMUL 等于 LMUL。
+
+----
+vzext.vf2 vd, vs2, vm  # 零扩展 SEW/2 源到 SEW 目标
+vsext.vf2 vd, vs2, vm  # 符号扩展 SEW/2 源到 SEW 目标
+vzext.vf4 vd, vs2, vm  # 零扩展 SEW/4 源到 SEW 目标
+vsext.vf4 vd, vs2, vm  # 符号扩展 SEW/4 源到 SEW 目标
+vzext.vf8 vd, vs2, vm  # 零扩展 SEW/8 源到 SEW 目标
+vsext.vf8 vd, vs2, vm  # 符号扩展 SEW/8 源到 SEW 目标
+----
+
+如果源 EEW 不是支持的宽度，或者源 EMUL 将低于最小合法 LMUL，则指令编码被保留。
+
+NOTE: 标准向量加载指令访问与目标寄存器元素大小相同的内存值。一些应用程序代码需要在更宽的元素中操作一系列操作数宽度，例如，从内存加载一个字节并添加到八字节元素。为了避免必须提供向量加载指令数量与数据类型数量（字节、字、半字，以及有符号/无符号变体）的叉积，我们改为添加显式扩展指令，如果合适的扩宽运算指令不可用，可以使用这些指令。
+
+==== 向量整数带进位加法/带借位减法指令
+
+为了支持多字整数运算，提供了在进位位上操作的指令。对于每个操作（加法或减法），提供两个指令：一个提供结果（SEW 宽度），第二个生成进位输出（单个位编码为掩码布尔值）。
+
+进位输入和输出使用 <<sec-mask-register-layout>> 中描述的掩码寄存器布局表示。由于编码约束，进位输入必须来自隐式 `v0` 寄存器，但进位输出可以写入任何遵守源/目标重叠限制的向量寄存器。
+
+`vadc` 和 `vsbc` 将源操作数和进位输入或借位输入相加或相减，并将结果写入向量寄存器 `vd`。这些指令编码为掩码指令（`vm=0`），但它们对所有主体元素进行操作并写回。对应于无掩码版本（`vm=1`）的编码被保留。
+
+`vmadc` 和 `vmsbc` 将源操作数相加或相减，如果有掩码（`vm=0`）则可选地添加进位输入或减去借位输入，并将结果进位输出或借位输出写回掩码寄存器 `vd`。如果无掩码（`vm=1`），则没有进位输入或借位输入。这些指令对所有主体元素进行操作并写回，即使有掩码。因为这些指令产生掩码值，它们总是以尾部无关策略操作。
+
+----
+ # 产生带进位的和
+
+ # vd[i] = vs2[i] + vs1[i] + v0.mask[i]
+ vadc.vvm   vd, vs2, vs1, v0  # 向量-向量
+
+ # vd[i] = vs2[i] + x[rs1] + v0.mask[i]
+ vadc.vxm   vd, vs2, rs1, v0  # 向量-标量
+
+ # vd[i] = vs2[i] + imm + v0.mask[i]
+ vadc.vim   vd, vs2, imm, v0  # 向量-立即数
+
+ # 以掩码寄存器格式产生进位输出
+
+ # vd.mask[i] = carry_out(vs2[i] + vs1[i] + v0.mask[i])
+ vmadc.vvm   vd, vs2, vs1, v0  # 向量-向量
+
+ # vd.mask[i] = carry_out(vs2[i] + x[rs1] + v0.mask[i])
+ vmadc.vxm   vd, vs2, rs1, v0  # 向量-标量
+
+ # vd.mask[i] = carry_out(vs2[i] + imm + v0.mask[i])
+ vmadc.vim   vd, vs2, imm, v0  # 向量-立即数
+
+ # vd.mask[i] = carry_out(vs2[i] + vs1[i])
+ vmadc.vv    vd, vs2, vs1      # 向量-向量，无进位输入
+
+ # vd.mask[i] = carry_out(vs2[i] + x[rs1])
+ vmadc.vx    vd, vs2, rs1      # 向量-标量，无进位输入
+
+ # vd.mask[i] = carry_out(vs2[i] + imm)
+ vmadc.vi    vd, vs2, imm      # 向量-立即数，无进位输入
+----
+
+因为实现进位传播需要使用不变的输入执行两个指令，破坏性累积将需要额外的移动来获得正确的结果。
+
+----
+# 多字运算序列示例，累积到 v4
+vmadc.vvm v1, v4, v8, v0  # 将进位获取到临时寄存器 v1
+vadc.vvm v4, v4, v8, v0   # 计算新的和
+vmmv.m v0, v1             # 将临时进位移动到 v0 用于下一个字
+----
+
+带借位减法指令 `vsbc` 执行等效功能以支持减法的长字运算。没有带立即数的减法指令。
+
+----
+# 产生带借位的差
+
+# vd[i] = vs2[i] - vs1[i] - v0.mask[i]
+vsbc.vvm   vd, vs2, vs1, v0  # 向量-向量
+
+# vd[i] = vs2[i] - x[rs1] - v0.mask[i]
+vsbc.vxm   vd, vs2, rs1, v0  # 向量-标量
+
+# 以掩码寄存器格式产生借位输出
+
+# vd.mask[i] = borrow_out(vs2[i] - vs1[i] - v0.mask[i])
+vmsbc.vvm   vd, vs2, vs1, v0  # 向量-向量
+
+# vd.mask[i] = borrow_out(vs2[i] - x[rs1] - v0.mask[i])
+vmsbc.vxm   vd, vs2, rs1, v0  # 向量-标量
+
+# vd.mask[i] = borrow_out(vs2[i] - vs1[i])
+vmsbc.vv    vd, vs2, vs1      # 向量-向量，无借位输入
+
+# vd.mask[i] = borrow_out(vs2[i] - x[rs1])
+vmsbc.vx    vd, vs2, rs1      # 向量-标量，无借位输入
+----
+
+对于 `vmsbc`，借位被定义为当差在截断之前为负时为 1。
+
+对于 `vadc` 和 `vsbc`，如果目标向量寄存器是 `v0`，则指令编码被保留。
+
+NOTE: 此约束对应于覆盖掩码寄存器的掩码向量操作的约束。
+
+==== 向量位运算逻辑指令
+
+----
+# 位运算逻辑操作
+vand.vv vd, vs2, vs1, vm   # 向量-向量
+vand.vx vd, vs2, rs1, vm   # 向量-标量
+vand.vi vd, vs2, imm, vm   # 向量-立即数
+
+vor.vv vd, vs2, vs1, vm    # 向量-向量
+vor.vx vd, vs2, rs1, vm    # 向量-标量
+vor.vi vd, vs2, imm, vm    # 向量-立即数
+
+vxor.vv vd, vs2, vs1, vm    # 向量-向量
+vxor.vx vd, vs2, rs1, vm    # 向量-标量
+vxor.vi vd, vs2, imm, vm    # 向量-立即数
+----
+
+NOTE: 使用立即数 -1，`vxor` 指令的标量-立即数形式提供位运算 NOT 操作。这作为汇编伪指令提供：`vnot.v vd,vs,vm` = `vxor.vi vd,vs,-1,vm`。
+
+==== 向量单宽度移位指令
+
+提供了一套完整的向量移位指令，包括逻辑左移（`sll`）、逻辑（零扩展 `srl`）和算术（符号扩展 `sra`）右移。要移位的数据在由 `vs2` 指定的向量寄存器组中，移位量值可以来自向量寄存器组 `vs1`、标量整数寄存器 `rs1` 或零扩展的 5 位立即数。只有移位量值的低 lg2(SEW) 位用于控制移位量。
+
+----
+# 位移位操作
+vsll.vv vd, vs2, vs1, vm   # 向量-向量
+vsll.vx vd, vs2, rs1, vm   # 向量-标量
+vsll.vi vd, vs2, uimm, vm   # 向量-立即数
+
+vsrl.vv vd, vs2, vs1, vm   # 向量-向量
+vsrl.vx vd, vs2, rs1, vm   # 向量-标量
+vsrl.vi vd, vs2, uimm, vm   # 向量-立即数
+
+vsra.vv vd, vs2, vs1, vm   # 向量-向量
+vsra.vx vd, vs2, rs1, vm   # 向量-标量
+vsra.vi vd, vs2, uimm, vm   # 向量-立即数
+----
+
+==== 向量收窄整数右移指令
+
+收窄右移从更宽的操作数中提取较小的字段，有零扩展（`srl`）和符号扩展（`sra`）两种形式。移位量可以来自向量寄存器组、标量 `x` 寄存器或零扩展的 5 位立即数。使用移位量值的低 lg2(2*SEW) 位（例如，对于 SEW=64 位到 SEW=32 位的收窄操作使用低 6 位）。
+
+----
+ # 收窄逻辑右移，SEW = (2*SEW) >> SEW
+ vnsrl.wv vd, vs2, vs1, vm   # 向量-向量
+ vnsrl.wx vd, vs2, rs1, vm   # 向量-标量
+ vnsrl.wi vd, vs2, uimm, vm   # 向量-立即数
+
+ # 收窄算术右移，SEW = (2*SEW) >> SEW
+ vnsra.wv vd, vs2, vs1, vm   # 向量-向量
+ vnsra.wx vd, vs2, rs1, vm   # 向量-标量
+ vnsra.wi vd, vs2, uimm, vm   # 向量-立即数
+----
+
+NOTE: 未来的扩展可能会添加对收窄到源宽度 1/4 的目标的版本的支持。
+
+NOTE: 整数值可以使用标量操作数为 `x0` 的收窄整数移位指令将宽度减半。提供了汇编伪指令 `vncvt.x.x.w vd,vs,vm` = `vnsrl.wx vd,vs,x0,vm`。
+
+==== 向量整数比较指令
+
+以下整数比较指令在比较评估为真时将 1 写入目标掩码寄存器元素，否则写入 0。目标掩码向量总是保存在单个向量寄存器中，元素布局如 <<sec-mask-register-layout>> 中所述。目标掩码向量寄存器可以与源向量掩码寄存器（`v0`）相同。
+
+----
+# 设置相等
+vmseq.vv vd, vs2, vs1, vm  # 向量-向量
+vmseq.vx vd, vs2, rs1, vm  # 向量-标量
+vmseq.vi vd, vs2, imm, vm  # 向量-立即数
+
+# 设置不相等
+vmsne.vv vd, vs2, vs1, vm  # 向量-向量
+vmsne.vx vd, vs2, rs1, vm  # 向量-标量
+vmsne.vi vd, vs2, imm, vm  # 向量-立即数
+
+# 设置小于，无符号
+vmsltu.vv vd, vs2, vs1, vm  # 向量-向量
+vmsltu.vx vd, vs2, rs1, vm  # 向量-标量
+
+# 设置小于，有符号
+vmslt.vv vd, vs2, vs1, vm  # 向量-向量
+vmslt.vx vd, vs2, rs1, vm  # 向量-标量
+
+# 设置小于等于，无符号
+vmsleu.vv vd, vs2, vs1, vm   # 向量-向量
+vmsleu.vx vd, vs2, rs1, vm   # 向量-标量
+vmsleu.vi vd, vs2, imm, vm   # 向量-立即数
+
+# 设置小于等于，有符号
+vmsle.vv vd, vs2, vs1, vm  # 向量-向量
+vmsle.vx vd, vs2, rs1, vm  # 向量-标量
+vmsle.vi vd, vs2, imm, vm  # 向量-立即数
+
+# 设置大于，无符号
+vmsgtu.vx vd, vs2, rs1, vm   # 向量-标量
+vmsgtu.vi vd, vs2, imm, vm   # 向量-立即数
+
+# 设置大于，有符号
+vmsgt.vx vd, vs2, rs1, vm    # 向量-标量
+vmsgt.vi vd, vs2, imm, vm    # 向量-立即数
+
+# 以下两个指令不直接提供
+# 设置大于等于，无符号
+# vmsgeu.vx vd, vs2, rs1, vm    # 向量-标量
+# 设置大于等于，有符号
+# vmsge.vx vd, vs2, rs1, vm    # 向量-标量
+----
+
+下表说明了所有比较在本机机器代码中的实现方式。
+
+----
+比较            汇编器映射                    汇编器伪指令
+
+va < vb         vmslt{u}.vv vd, va, vb, vm
+va <= vb        vmsle{u}.vv vd, va, vb, vm
+va > vb         vmslt{u}.vv vd, vb, va, vm    vmsgt{u}.vv vd, va, vb, vm
+va >= vb        vmsle{u}.vv vd, vb, va, vm    vmsge{u}.vv vd, va, vb, vm
+
+va < x          vmslt{u}.vx vd, va, x, vm
+va <= x         vmsle{u}.vx vd, va, x, vm
+va > x          vmsgt{u}.vx vd, va, x, vm
+va >= x         见下文
+
+va < i          vmsle{u}.vi vd, va, i-1, vm    vmslt{u}.vi vd, va, i, vm
+va <= i         vmsle{u}.vi vd, va, i, vm
+va > i          vmsgt{u}.vi vd, va, i, vm
+va >= i         vmsgt{u}.vi vd, va, i-1, vm    vmsge{u}.vi vd, va, i, vm
+
+va, vb 向量寄存器组
+x      标量整数寄存器
+i      立即数
+----
+
+NOTE: 不提供 `vmslt{u}.vi` 的立即数形式，因为立即数值可以减 1 并使用 `vmsle{u}.vi` 变体代替。`vmsle.vi` 范围是 -16 到 15，导致有效的 `vmslt.vi` 范围为 -15 到 16。`vmsleu.vi` 范围是 0 到 15，给出有效的 `vmsltu.vi` 范围为 1 到 16（注意，立即数为 0 的 `vmsltu.vi` 无用，因为它总是为假）。
+
+NOTE: 因为 5 位向量立即数总是符号扩展，当 `simm5` 立即数的高位被设置时，`vmsleu.vi` 还支持范围 `2^SEW^-16` 到 `2^SEW^-1` 中的无符号立即数值，允许对应的 `vmsltu.vi` 比较范围 `2^SEW^-15` 到 `2^SEW^` 中的无符号立即数。注意立即数为 `2^SEW^` 的 `vmsltu.vi` 无用，因为它总是为真。
+
+类似地，不提供 `vmsge{u}.vi`，比较使用立即数减 1 的 `vmsgt{u}.vi` 实现。结果有效的 `vmsge.vi` 范围是 -15 到 16，结果有效的 `vmsgeu.vi` 范围是 1 到 16（注意，立即数为 0 的 `vmsgeu.vi` 无用，因为它总是为真）。
+
+NOTE: 提供寄存器标量和立即数的 `vmsgt` 形式是为了允许单个比较指令提供正确的掩码值极性，而无需使用额外的掩码逻辑指令。
+
+为了减少编码空间，不直接提供 `vmsge{u}.vx` 形式，因此 `va {ge} x` 情况需要特殊处理。
+
+NOTE: `vmsge{u}.vx` 可能以非正交方式在 `vmslt{u}` 的未使用 OPIVI 变体下编码。但是，这些将是 OPIVI 中唯一使用标量 `x` 寄存器的指令。或者，可以使用另外两个 funct6 编码，但这些与同一组 8 个 funct6 编码中的其他指令具有不同的操作数格式（写入掩码寄存器）。当前的计划是省略这些指令并在需要时进行合成，如下所述。
+
+当已知这不会导致 `x` 中表示的下溢时，可以通过将 `x` 的值减 1 并使用 `vmsgt{u}.vx` 指令来合成 `vmsge{u}.vx` 操作。
+
+----
+合成 `vmsge{u}.vx` 指令的序列
+
+va >= x,  x > minimum
+
+   addi t0, x, -1; vmsgt{u}.vx vd, va, t0, vm
+----
+
+上述序列通常是最有效的实现，但可以为 `x` 范围未知的情况提供汇编伪指令。
+
+----
+无掩码 va >= x
+
+  伪指令：vmsge{u}.vx vd, va, x
+  展开：vmslt{u}.vx vd, va, x; vmnand.mm vd, vd, vd
+
+掩码 va >= x，vd != v0
+
+  伪指令：vmsge{u}.vx vd, va, x, v0.t
+  展开：vmslt{u}.vx vd, va, x, v0.t; vmxor.mm vd, vd, v0
+
+掩码 va >= x，vd == v0
+
+  伪指令：vmsge{u}.vx vd, va, x, v0.t, vt
+  展开：vmslt{u}.vx vt, va, x;  vmandn.mm vd, vd, vt
+
+掩码 va >= x，任意 vd
+
+  伪指令：vmsge{u}.vx vd, va, x, v0.t, vt
+  展开：vmslt{u}.vx vt, va, x;  vmandn.mm vt, v0, vt;  vmandn.mm vd, vd, v0;  vmor.mm vd, vt, vd
+
+  伪指令的 vt 参数必须命名一个与 vd 不同的临时向量寄存器，该寄存器将被伪指令破坏
+----
+
+如果目标寄存器是 `v0`，比较在掩码不受干扰策略下有效地与掩码进行 AND，例如：
+
+----
+# 当掩码不受干扰时，两个指令中的 (a < b) && (b < c)
+vmslt.vv    v0, va, vb        # 写入所有主体元素
+vmslt.vv    v0, vb, vc, v0.t  # 仅在设置掩码处更新
+----
+
+比较写入掩码寄存器，因此总是在尾部无关策略下操作。
+
+==== 向量整数最小/最大指令
+
+支持有符号和无符号整数最小值和最大值指令。
+
+----
+# 无符号最小值
+vminu.vv vd, vs2, vs1, vm   # 向量-向量
+vminu.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 有符号最小值
+vmin.vv vd, vs2, vs1, vm   # 向量-向量
+vmin.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 无符号最大值
+vmaxu.vv vd, vs2, vs1, vm   # 向量-向量
+vmaxu.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 有符号最大值
+vmax.vv vd, vs2, vs1, vm   # 向量-向量
+vmax.vx vd, vs2, rs1, vm   # 向量-标量
+----
+
+==== 向量单宽度整数乘法指令
+
+单宽度乘法指令执行 SEW 位*SEW 位乘法以生成 2*SEW 位乘积，然后在 SEW 位宽目标中返回乘积的一半。`*mul*` 版本将乘积的低字写入目标寄存器，而 `*mulh*` 版本将乘积的高字写入目标寄存器。
+
+----
+# 有符号乘法，返回乘积的低位
+vmul.vv vd, vs2, vs1, vm   # 向量-向量
+vmul.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 有符号乘法，返回乘积的高位
+vmulh.vv vd, vs2, vs1, vm   # 向量-向量
+vmulh.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 无符号乘法，返回乘积的高位
+vmulhu.vv vd, vs2, vs1, vm   # 向量-向量
+vmulhu.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 有符号(vs2)-无符号乘法，返回乘积的高位
+vmulhsu.vv vd, vs2, vs1, vm   # 向量-向量
+vmulhsu.vx vd, vs2, rs1, vm   # 向量-标量
+----
+
+NOTE: 没有 `vmulhus.vx` 操作码来返回无符号向量 * 有符号标量乘积的高半部分。标量可以分散到向量，然后使用 `vmulhsu.vv`。
+
+NOTE: 当前的 `vmulh*` 操作码执行简单的分数乘法，但没有缩放、舍入和/或饱和结果的选项。未来的扩展可能考虑在丢弃乘积的低半部分时使用 `vxrm` 舍入模式的 `vmulh`、`vmulhu`、`vmulhsu` 变体。在这些情况下没有溢出的可能性。
+
+==== 向量整数除法指令
+
+除法和余数指令等效于 RISC-V 标准标量整数乘法/除法，对于极端输入具有相同的结果。
+
+----
+# 无符号除法
+vdivu.vv vd, vs2, vs1, vm   # 向量-向量
+vdivu.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 有符号除法
+vdiv.vv vd, vs2, vs1, vm   # 向量-向量
+vdiv.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 无符号余数
+vremu.vv vd, vs2, vs1, vm   # 向量-向量
+vremu.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 有符号余数
+vrem.vv vd, vs2, vs1, vm   # 向量-向量
+vrem.vx vd, vs2, rs1, vm   # 向量-标量
+----
+
+NOTE: 包含整数除法和余数的决定是有争议的。支持的论点是，如果没有标准指令，软件必须选择某种算法来执行操作，这在某些微架构上可能比其他微架构表现更差。
+
+NOTE: 没有执行"标量除以向量"操作的指令。
+
+==== 向量扩宽整数乘法指令
+
+扩宽整数乘法指令从 SEW 位*SEW 位乘法返回完整的 2*SEW 位乘积。
+
+----
+# 扩宽有符号整数乘法
+vwmul.vv  vd, vs2, vs1, vm # 向量-向量
+vwmul.vx  vd, vs2, rs1, vm # 向量-标量
+
+# 扩宽无符号整数乘法
+vwmulu.vv vd, vs2, vs1, vm # 向量-向量
+vwmulu.vx vd, vs2, rs1, vm # 向量-标量
+
+# 扩宽有符号(vs2)-无符号整数乘法
+vwmulsu.vv vd, vs2, vs1, vm # 向量-向量
+vwmulsu.vx vd, vs2, rs1, vm # 向量-标量
+----
+
+==== 向量单宽度整数乘加指令
+
+整数乘加指令是破坏性的，提供两种形式，一种覆盖被加数或被减数（`vmacc`、`vnmsac`），另一种覆盖第一个乘数（`vmadd`、`vnmsub`）。
+
+乘积的低半部分与第三个操作数相加或相减。
+
+NOTE: `sac` 的含义是"从累加器减法"。操作码是 `vnmsac`，以匹配（不幸的是违反直觉的）浮点 `fnmsub` 指令定义。`vnmsub` 操作码同样如此。
+
+----
+# 整数乘加，覆盖被加数
+vmacc.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vmacc.vx vd, rs1, vs2, vm    # vd[i] = +(x[rs1] * vs2[i]) + vd[i]
+
+# 整数乘减，覆盖被减数
+vnmsac.vv vd, vs1, vs2, vm    # vd[i] = -(vs1[i] * vs2[i]) + vd[i]
+vnmsac.vx vd, rs1, vs2, vm    # vd[i] = -(x[rs1] * vs2[i]) + vd[i]
+
+# 整数乘加，覆盖乘数
+vmadd.vv vd, vs1, vs2, vm    # vd[i] = (vs1[i] * vd[i]) + vs2[i]
+vmadd.vx vd, rs1, vs2, vm    # vd[i] = (x[rs1] * vd[i]) + vs2[i]
+
+# 整数乘减，覆盖乘数
+vnmsub.vv vd, vs1, vs2, vm    # vd[i] = -(vs1[i] * vd[i]) + vs2[i]
+vnmsub.vx vd, rs1, vs2, vm    # vd[i] = -(x[rs1] * vd[i]) + vs2[i]
+----
+
+==== 向量扩宽整数乘加指令
+
+扩宽整数乘加指令将 SEW 位*SEW 位乘法的完整 2*SEW 位乘积添加到 2*SEW 位值并产生 2*SEW 位结果。支持有符号和无符号乘法操作数的所有组合。
+
+----
+# 扩宽无符号整数乘加，覆盖被加数
+vwmaccu.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vwmaccu.vx vd, rs1, vs2, vm    # vd[i] = +(x[rs1] * vs2[i]) + vd[i]
+
+# 扩宽有符号整数乘加，覆盖被加数
+vwmacc.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vwmacc.vx vd, rs1, vs2, vm    # vd[i] = +(x[rs1] * vs2[i]) + vd[i]
+
+# 扩宽有符号-无符号整数乘加，覆盖被加数
+vwmaccsu.vv vd, vs1, vs2, vm  # vd[i] = +(signed(vs1[i]) * unsigned(vs2[i])) + vd[i]
+vwmaccsu.vx vd, rs1, vs2, vm  # vd[i] = +(signed(x[rs1]) * unsigned(vs2[i])) + vd[i]
+
+# 扩宽无符号-有符号整数乘加，覆盖被加数
+vwmaccus.vx vd, rs1, vs2, vm  # vd[i] = +(unsigned(x[rs1]) * signed(vs2[i])) + vd[i]
+----
+
+==== 向量整数合并指令
+
+向量整数合并指令基于掩码组合两个源操作数。与常规算术指令不同，合并操作对所有主体元素（即从 `vstart` 到 `vl` 中当前向量长度的元素集合）进行操作。
+
+`vmerge` 指令编码为掩码指令（`vm=0`）。指令按如下方式组合两个源。在掩码值为零的元素处，第一个操作数被复制到目标元素，否则第二个操作数被复制到目标元素。第一个操作数总是由 `vs2` 指定的向量寄存器组。第二个操作数是由 `vs1` 指定的向量寄存器组或由 `rs1` 指定的标量 `x` 寄存器或 5 位符号扩展立即数。
+
+----
+vmerge.vvm vd, vs2, vs1, v0  # vd[i] = v0.mask[i] ? vs1[i] : vs2[i]
+vmerge.vxm vd, vs2, rs1, v0  # vd[i] = v0.mask[i] ? x[rs1] : vs2[i]
+vmerge.vim vd, vs2, imm, v0  # vd[i] = v0.mask[i] ? imm    : vs2[i]
+----
+
+==== 向量整数移动指令
+
+向量整数移动指令将源操作数复制到向量寄存器组。`vmv.v.v` 变体复制向量寄存器组，而 `vmv.v.x` 和 `vmv.v.i` 变体将标量寄存器或立即数 __分散__ 到目标向量寄存器组的所有活动元素。这些指令编码为无掩码指令（`vm=1`）。第一个操作数说明符（`vs2`）必须包含 `v0`，`vs2` 中的任何其他向量寄存器号都是 _保留的_。
+
+----
+vmv.v.v vd, vs1 # vd[i] = vs1[i]
+vmv.v.x vd, rs1 # vd[i] = x[rs1]
+vmv.v.i vd, imm # vd[i] = imm
+----
+
+NOTE: 掩码值可以使用序列 `vmv.v.i vd, 0; vmerge.vim vd, vd, 1, v0` 扩宽为 SEW 宽度元素。
+
+NOTE: 向量整数移动指令与向量合并指令共享编码，但使用 `vm=1` 和 `vs2=v0`。
+
+形式 `vmv.v.v vd, vd`（保持主体元素不变）可用于指示寄存器接下来将与等于 SEW 的 EEW 一起使用。
+
+NOTE: 根据 EEW 内部重组数据的实现可以根据 SEW 洗牌内部表示。不内部重组数据的实现可以动态省略此指令，并视为 NOP。
+
+NOTE: `vmv.v.v vd, vd` 指令不是 RISC-V HINT，因为尾部无关设置可能在某些实现上导致架构状态更改。
+
+[[sec-vector-fixed-point]]
+=== 向量定点运算指令
+
+前面的整数运算指令集扩展以支持定点运算。
+
+定点数是二进制补码有符号或无符号整数，解释为具有隐式分母的分数中的分子。定点指令旨在应用于分子；软件负责管理分母。N 位元素可以保存范围 -2^N-1^...+2^N-1^-1 的二进制补码有符号整数，以及范围 0...+2^N^-1 的无符号整数。定点指令通过支持缩放和舍入来帮助在窄操作数中保持精度，并可以通过将结果饱和到目标格式范围来处理溢出。
+
+NOTE: 上述扩宽整数操作也可用于避免溢出。
+
+==== 向量单宽度饱和加法和减法
+
+为有符号和无符号整数提供了饱和形式的整数加法和减法。如果结果会溢出目标，结果将被替换为最接近的可表示值，并设置 `vxsat` 位。
+
+----
+# 无符号整数的饱和加法
+vsaddu.vv vd, vs2, vs1, vm   # 向量-向量
+vsaddu.vx vd, vs2, rs1, vm   # 向量-标量
+vsaddu.vi vd, vs2, imm, vm   # 向量-立即数
+
+# 有符号整数的饱和加法
+vsadd.vv vd, vs2, vs1, vm   # 向量-向量
+vsadd.vx vd, vs2, rs1, vm   # 向量-标量
+vsadd.vi vd, vs2, imm, vm   # 向量-立即数
+
+# 无符号整数的饱和减法
+vssubu.vv vd, vs2, vs1, vm   # 向量-向量
+vssubu.vx vd, vs2, rs1, vm   # 向量-标量
+
+# 有符号整数的饱和减法
+vssub.vv vd, vs2, vs1, vm   # 向量-向量
+vssub.vx vd, vs2, rs1, vm   # 向量-标量
+----
+
+==== 向量单宽度平均加法和减法
+
+平均加法和减法指令将结果右移一位，并根据 `vxrm` 中的设置对结果进行舍入。计算在舍入和截断之前以无限精度执行。提供无符号和有符号版本。对于 `vaaddu` 和 `vaadd`，结果中不会有溢出。对于 `vasub` 和 `vasubu`，忽略溢出，结果环绕。
+
+NOTE: 对于 `vasub`，只有在 `rnu` 或 `rne` 舍入下从最大数中减去最小数时才会发生溢出。
+
+----
+# 平均加法
+
+# 无符号整数的平均加法
+vaaddu.vv vd, vs2, vs1, vm   # roundoff_unsigned(vs2[i] + vs1[i], 1)
+vaaddu.vx vd, vs2, rs1, vm   # roundoff_unsigned(vs2[i] + x[rs1], 1)
+
+# 有符号整数的平均加法
+vaadd.vv vd, vs2, vs1, vm   # roundoff_signed(vs2[i] + vs1[i], 1)
+vaadd.vx vd, vs2, rs1, vm   # roundoff_signed(vs2[i] + x[rs1], 1)
+
+# 平均减法
+
+# 无符号整数的平均减法
+vasubu.vv vd, vs2, vs1, vm   # roundoff_unsigned(vs2[i] - vs1[i], 1)
+vasubu.vx vd, vs2, rs1, vm   # roundoff_unsigned(vs2[i] - x[rs1], 1)
+
+# 有符号整数的平均减法
+vasub.vv vd, vs2, vs1, vm   # roundoff_signed(vs2[i] - vs1[i], 1)
+vasub.vx vd, vs2, rs1, vm   # roundoff_signed(vs2[i] - x[rs1], 1)
+----
+
+==== 向量单宽度分数乘法（舍入和饱和）
+
+有符号分数乘法指令产生两个 SEW 输入的 2*SEW 乘积，然后将结果右移 SEW-1 位，根据 `vxrm` 对这些位进行舍入，然后使结果饱和以适合 SEW 位。如果结果导致饱和，则设置 `vxsat` 位。
+
+----
+# 有符号饱和和舍入分数乘法
+# 参见 vxrm 描述以了解舍入计算
+vsmul.vv vd, vs2, vs1, vm  # vd[i] = clip(roundoff_signed(vs2[i]*vs1[i], SEW-1))
+vsmul.vx vd, vs2, rs1, vm  # vd[i] = clip(roundoff_signed(vs2[i]*x[rs1], SEW-1))
+----
+
+NOTE: 当乘以两个 N 位有符号数时，最大幅度是 -2^N-1^ * -2^N-1^ 产生结果 +2^2N-2^，当保存在 2N 位中时具有单个（零）符号位。所有其他乘积在 2N 位中有两个符号位。为了在 N 个结果位中保持更大的精度，乘积右移比 N 少一位，使最大幅度结果饱和，但将所有其他乘积的结果精度增加一位。
+
+NOTE: 我们不提供一个输入为无符号的等效分数乘法，因为这些将保留所有上位 SEW 位并且不需要饱和。此操作部分由 `vmulhu` 和 `vmulhsu` 指令覆盖，适用于舍入只是截断（`rdn`）的情况。
+
+==== 向量单宽度缩放移位指令
+
+这些指令将输入值右移，并根据 `vxrm` 对移位出的位进行舍入。缩放右移有零扩展（`vssrl`）和符号扩展（`vssra`）两种形式。要移位的数据在由 `vs2` 指定的向量寄存器组中，移位量值可以来自向量寄存器组 `vs1`、标量整数寄存器 `rs1` 或零扩展的 5 位立即数。只有移位量值的低 lg2(SEW) 位用于控制移位量。
+
+----
+ # 缩放逻辑右移
+ vssrl.vv vd, vs2, vs1, vm   # vd[i] = roundoff_unsigned(vs2[i], vs1[i])
+ vssrl.vx vd, vs2, rs1, vm   # vd[i] = roundoff_unsigned(vs2[i], x[rs1])
+ vssrl.vi vd, vs2, uimm, vm  # vd[i] = roundoff_unsigned(vs2[i], uimm)
+
+ # 缩放算术右移
+ vssra.vv vd, vs2, vs1, vm   # vd[i] = roundoff_signed(vs2[i],vs1[i])
+ vssra.vx vd, vs2, rs1, vm   # vd[i] = roundoff_signed(vs2[i], x[rs1])
+ vssra.vi vd, vs2, uimm, vm  # vd[i] = roundoff_signed(vs2[i], uimm)
+----
+
+==== 向量收窄定点截取指令
+
+`vnclip` 指令用于将定点值打包到较窄的目标中。指令支持对最终目标格式进行舍入、缩放和饱和。源数据在由 `vs2` 指定的向量寄存器组中。缩放移位量值可以来自向量寄存器组 `vs1`、标量整数寄存器 `rs1` 或零扩展的 5 位立即数。向量或标量移位量值的低 lg2(2*SEW) 位（例如，对于 SEW=64 位到 SEW=32 位的收窄操作使用低 6 位）用于控制右移量，这提供了缩放。
+
+----
+# 收窄无符号截取
+#                                SEW                            2*SEW   SEW
+vnclipu.wv vd, vs2, vs1, vm  # vd[i] = clip(roundoff_unsigned(vs2[i], vs1[i]))
+vnclipu.wx vd, vs2, rs1, vm  # vd[i] = clip(roundoff_unsigned(vs2[i], x[rs1]))
+vnclipu.wi vd, vs2, uimm, vm # vd[i] = clip(roundoff_unsigned(vs2[i], uimm))
+
+# 收窄有符号截取
+vnclip.wv vd, vs2, vs1, vm   # vd[i] = clip(roundoff_signed(vs2[i], vs1[i]))
+vnclip.wx vd, vs2, rs1, vm   # vd[i] = clip(roundoff_signed(vs2[i], x[rs1]))
+vnclip.wi vd, vs2, uimm, vm  # vd[i] = clip(roundoff_signed(vs2[i], uimm))
+----
+
+对于 `vnclipu`/`vnclip`，舍入模式在 `vxrm` CSR 中指定。舍入发生在目标的最低有效位周围，并在饱和之前。
+
+对于 `vnclipu`，移位后的舍入源值被视为无符号整数，如果结果会溢出视为无符号整数的目标，则会饱和。
+
+NOTE: 没有单个指令可以将有符号值饱和到无符号目标中。如果不需要为负数设置 `vxsat` 值，可以使用两个向量指令的序列，首先使用 `vmax` 对 0 执行最大值操作来移除负数，然后使用 `vnclipu` 将结果无符号值截取到目标中。在这两个指令之间需要 `vsetvli` 来更改 SEW。
+
+对于 `vnclip`，移位后的舍入源值被视为有符号整数，如果结果会溢出视为有符号整数的目标，则会饱和。
+
+如果任何目标元素饱和，则在 `vxsat` 寄存器中设置 `vxsat` 位。
+
+[[sec-vector-float]]
+=== 向量浮点指令
+
+标准向量浮点指令将元素视为 IEEE-754/2008 兼容值。如果向量浮点操作数的 EEW 不对应于支持的 IEEE 浮点类型，则指令编码被保留。
+
+NOTE: 是否支持浮点以及支持哪些元素宽度由特定的向量扩展确定。当前的扩展集包括对 32 位和 64 位浮点值的支持。当添加 16 位和 128 位元素宽度时，它们也将被视为 IEEE-754/2008 兼容值。其他浮点格式可能在未来的扩展中得到支持。
+
+向量浮点指令需要存在与支持的向量浮点元素宽度相对应的基础标量浮点扩展。
+
+NOTE: 特别是，未来支持 16 位半精度浮点值的向量扩展也将需要一些标量半精度浮点支持。
+
+如果浮点单元状态字段 `mstatus.FS` 为 `Off`，则任何尝试执行向量浮点指令都会引发非法指令异常。任何修改任何浮点扩展状态（即浮点 CSR 或 `f` 寄存器）的向量浮点指令必须将 `mstatus.FS` 设置为 `Dirty`。
+
+如果实现了虚拟化扩展且 V=1，则 `vsstatus.FS` 字段对向量浮点指令另外有效。如果 `vsstatus.FS` 或 `mstatus.FS` 为 `Off`，则任何尝试执行向量浮点指令都会引发非法指令异常。任何修改任何浮点扩展状态（即浮点 CSR 或 `f` 寄存器）的向量浮点指令必须将 `mstatus.FS` 和 `vsstatus.FS` 都设置为 `Dirty`。
+
+向量浮点指令在 NaN 方面具有与标量浮点指令相同的行为。
+
+浮点向量-标量操作的标量值按 <<sec-arithmetic-encoding>> 中描述的方式获取。
+
+==== 向量浮点异常标志
+
+任何活动浮点元素处的向量浮点异常都会在 `fflags` 寄存器中设置标准 FP 异常标志。非活动元素不设置 FP 异常标志。
+
+==== 向量单宽度浮点加法/减法指令
+
+----
+# 浮点加法
+vfadd.vv vd, vs2, vs1, vm   # 向量-向量
+vfadd.vf vd, vs2, rs1, vm   # 向量-标量
+
+# 浮点减法
+vfsub.vv vd, vs2, vs1, vm   # 向量-向量
+vfsub.vf vd, vs2, rs1, vm   # 向量-标量 vd[i] = vs2[i] - f[rs1]
+vfrsub.vf vd, vs2, rs1, vm  # 标量-向量 vd[i] = f[rs1] - vs2[i]
+----
+
+==== 向量扩宽浮点加法/减法指令
+
+----
+# 扩宽 FP 加法/减法，2*SEW = SEW +/- SEW
+vfwadd.vv vd, vs2, vs1, vm  # 向量-向量
+vfwadd.vf vd, vs2, rs1, vm  # 向量-标量
+vfwsub.vv vd, vs2, vs1, vm  # 向量-向量
+vfwsub.vf vd, vs2, rs1, vm  # 向量-标量
+
+# 扩宽 FP 加法/减法，2*SEW = 2*SEW +/- SEW
+vfwadd.wv  vd, vs2, vs1, vm  # 向量-向量
+vfwadd.wf  vd, vs2, rs1, vm  # 向量-标量
+vfwsub.wv  vd, vs2, vs1, vm  # 向量-向量
+vfwsub.wf  vd, vs2, rs1, vm  # 向量-标量
+----
+
+==== 向量单宽度浮点乘法/除法指令
+
+----
+# 浮点乘法
+vfmul.vv vd, vs2, vs1, vm   # 向量-向量
+vfmul.vf vd, vs2, rs1, vm   # 向量-标量
+
+# 浮点除法
+vfdiv.vv vd, vs2, vs1, vm   # 向量-向量
+vfdiv.vf vd, vs2, rs1, vm   # 向量-标量
+
+# 反向浮点除法 向量 = 标量 / 向量
+vfrdiv.vf vd, vs2, rs1, vm  # 标量-向量，vd[i] = f[rs1]/vs2[i]
+----
+
+==== 向量扩宽浮点乘法
+
+----
+# 扩宽浮点乘法
+vfwmul.vv    vd, vs2, vs1, vm # 向量-向量
+vfwmul.vf    vd, vs2, rs1, vm # 向量-标量
+----
+
+==== 向量单宽度浮点融合乘加指令
+
+提供了所有四种融合乘加变体，并以两种破坏性形式覆盖其中一个操作数，要么是被加数，要么是第一个乘数。
+
+----
+# FP 乘加累积，覆盖被加数
+vfmacc.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vfmacc.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vs2[i]) + vd[i]
+
+# FP 取反-(乘加累积)，覆盖被减数
+vfnmacc.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vs2[i]) - vd[i]
+vfnmacc.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vs2[i]) - vd[i]
+
+# FP 乘减累加器，覆盖被减数
+vfmsac.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) - vd[i]
+vfmsac.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vs2[i]) - vd[i]
+
+# FP 取反-(乘减累加器)，覆盖被减数
+vfnmsac.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vs2[i]) + vd[i]
+vfnmsac.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vs2[i]) + vd[i]
+
+# FP 乘加，覆盖乘数
+vfmadd.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vd[i]) + vs2[i]
+vfmadd.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vd[i]) + vs2[i]
+
+# FP 取反-(乘加)，覆盖乘数
+vfnmadd.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vd[i]) - vs2[i]
+vfnmadd.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vd[i]) - vs2[i]
+
+# FP 乘减，覆盖乘数
+vfmsub.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vd[i]) - vs2[i]
+vfmsub.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vd[i]) - vs2[i]
+
+# FP 取反-(乘减)，覆盖乘数
+vfnmsub.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vd[i]) + vs2[i]
+vfnmsub.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vd[i]) + vs2[i]
+----
+
+NOTE: 虽然我们考虑在标量 FP FMA 编码中使用两个未使用的舍入模式来提供一些非破坏性 FMA，但这些会使微架构复杂化，因为它们是唯一具有三个输入和单独输出的可掩码操作。
+
+==== 向量扩宽浮点融合乘加指令
+
+扩宽浮点融合乘加指令都用结果覆盖宽被加数。乘数输入都是 SEW 宽，而被加数和目标是 2*SEW 位宽。
+
+----
+# FP 扩宽乘加累积，覆盖被加数
+vfwmacc.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vfwmacc.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vs2[i]) + vd[i]
+
+# FP 扩宽取反-(乘加累积)，覆盖被加数
+vfwnmacc.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vs2[i]) - vd[i]
+vfwnmacc.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vs2[i]) - vd[i]
+
+# FP 扩宽乘减累加器，覆盖被加数
+vfwmsac.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) - vd[i]
+vfwmsac.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vs2[i]) - vd[i]
+
+# FP 扩宽取反-(乘减累加器)，覆盖被加数
+vfwnmsac.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vs2[i]) + vd[i]
+vfwnmsac.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vs2[i]) + vd[i]
+----
+
+==== 向量浮点平方根指令
+
+这是一元向量-向量指令。
+
+----
+# 浮点平方根
+vfsqrt.v vd, vs2, vm   # 向量-向量平方根
+----
+
+==== 向量浮点倒数平方根估计指令
+
+----
+# 浮点倒数平方根估计到7位
+vfrsqrt7.v vd, vs2, vm
+----
+
+这是一元向量-向量指令，返回1/sqrt(x)的估计值，精度为7位。
+
+NOTE: 早期草案版本使用汇编名称 `vfrsqrte7`，但被认为会与元素宽度的 ``e``__x__ 记号造成混淆。早期名称可以在工具链中作为别名保留以保持向后兼容性。
+
+下表描述了该指令对所有浮点输入类别的行为：
+
+[cols="1,1,1"]
+[%autowidth,float="center",align="center",options="header"]
+|===
+| 输入 | 输出 | 引发的异常
+
+| -{inf} {le} _x_ < -0.0     | 规范 NaN           | NV
+| -0.0                       | -{inf}                  | DZ
+| +0.0                       | +{inf}                  | DZ
+| +0.0 < _x_ < +{inf}        | _1/sqrt(x)的估计值_ |
+| +{inf}                     | +0.0                    |
+| qNaN                       | 规范 NaN           |
+| sNaN                       | 规范 NaN           | NV
+|===
+
+NOTE: 所有正规格化和次规格化输入产生规格化输出。
+
+NOTE: 输出值与动态舍入模式无关。
+
+对于非异常情况，指数的低位和尾数的六个高位（在前导1之后）被连接并用于寻址下表。表的输出成为结果尾数的七个高位（在前导1之后）；结果尾数的其余部分为零。次规格化输入在查找前被规格化并适当调整指数。输出指数被选择以使结果近似参数平方根的倒数。
+
+更精确地说，结果计算如下。如果输入为规格化，设规格化输入指数等于输入指数，否则等于0减去尾数中前导零的数量。如果输入为次规格化，规格化输入尾数通过将输入尾数左移1减去规格化输入指数位得到，丢弃前导1位。输出指数等于floor((3*B - 1 - 规格化输入指数) / 2)，其中B是指数偏移。输出符号等于输入符号。
+
+下表给出了输出尾数的七个MSB，作为规格化输入指数的LSB和规格化输入尾数的六个MSB的函数；输出尾数的其他位为零。
+
+include::images/wavedrom/vfrsqrt7.edn[]
+
+NOTE: 例如，当SEW=32时，vfrsqrt7(0x00718abc ({approx} 1.043e-38)) = 0x5f080000 ({approx} 9.800e18)，vfrsqrt7(0x7f765432 ({approx} 3.274e38)) = 0x1f820000 ({approx} 5.506e-20)。
+
+NOTE: 选择7位精度是因为它需要0、1、2、3次牛顿-拉夫逊迭代分别收敛到接近bfloat16、FP16、FP32、FP64精度。未来可以定义具有更高估计精度的指令。
+
+==== 向量浮点倒数估计指令
+
+----
+# 浮点倒数估计到7位
+vfrec7.v vd, vs2, vm
+----
+
+NOTE: 早期草案版本使用汇编名称 `vfrece7`，但被认为会与元素宽度的 ``e``__x__ 记号造成混淆。早期名称可以在工具链中作为别名保留以保持向后兼容性。
+
+这是一元向量-向量指令，返回1/x的估计值，精度为7位。
+
+下表描述了该指令对所有浮点输入类别的行为，其中 _B_ 是指数偏移：
+
+[cols="1,1,1,1"]
+[%autowidth,float="center",align="center",options="header"]
+|===
+| 输入 (_x_) | 舍入模式 | 输出 (_y_ {approx} _1/x_) | 引发的异常
+
+| -{inf}                                              | _任意_         | -0.0                      |
+| -2^B+1^ < _x_ {le} -2^B^ (规格化)                   | _任意_         | -2^-(B+1)^ {ge} _y_ > -2^-B^ (次规格化, sig=01...) |
+| -2^B^ < _x_ {le} -2^B-1^ (规格化)                   | _任意_         | -2^-B^ {ge} _y_ > -2^-B+1^ (次规格化, sig=1...) |
+| -2^B-1^ < _x_ {le} -2^-B+1^ (规格化)                | _任意_         | -2^-B+1^ {ge} _y_ > -2^B-1^ (规格化) |
+| -2^-B+1^ < _x_ {le} -2^-B^ (次规格化, sig=1...)    | _任意_         | -2^B-1^ {ge} _y_ > -2^B^ (规格化) |
+| -2^-B^ < _x_ {le} -2^-(B+1)^ (次规格化, sig=01...) | _任意_         | -2^B^ {ge} _y_ > -2^B+1^ (规格化) |
+| -2^-(B+1)^ < _x_ < -0.0 (次规格化, sig=00...)      | RUP, RTZ      | 最大幅度负有限值 | NX, OF
+| -2^-(B+1)^ < _x_ < -0.0 (次规格化, sig=00...)      | RDN, RNE, RMM | -{inf}                    | NX, OF
+| -0.0                                                | _任意_         | -{inf}                    | DZ
+| +0.0                                                | _任意_         | +{inf}                    | DZ
+| +0.0 < _x_ < 2^-(B+1)^ (次规格化, sig=00...)       | RUP, RNE, RMM | +{inf}                    | NX, OF
+| +0.0 < _x_ < 2^-(B+1)^ (次规格化, sig=00...)       | RDN, RTZ      | 最大有限值     | NX, OF
+| 2^-(B+1)^ {le} _x_ < 2^-B^ (次规格化, sig=01...)   | _任意_         | 2^B+1^ > _y_ {ge} 2^B^ (规格化) |
+| 2^-B^ {le} _x_ < 2^-B+1^ (次规格化, sig=1...)      | _任意_         | 2^B^ > _y_ {ge} 2^B-1^ (规格化) |
+| 2^-B+1^ {le} _x_ < 2^B-1^ (规格化)                  | _任意_         | 2^B-1^ > _y_ {ge} 2^-B+1^ (规格化) |
+| 2^B-1^ {le} _x_ < 2^B^ (规格化)                     | _任意_         | 2^-B+1^ > _y_ {ge} 2^-B^ (次规格化, sig=1...) |
+| 2^B^ {le} _x_ < 2^B+1^ (规格化)                     | _任意_         | 2^-B^ > _y_ {ge} 2^-(B+1)^ (次规格化, sig=01...) |
+| +{inf}                                              | _任意_         | +0.0                      |
+| qNaN                                                | _任意_         | 规范 NaN             |
+| sNaN                                                | _任意_         | 规范 NaN             | NV
+|===
+
+NOTE: 幅度至少为2^-(B+1)^的次规格化输入产生规格化输出；其他次规格化输入产生无限输出。幅度至少为2^B-1^的规格化输入产生次规格化输出；其他规格化输入产生规格化输出。
+
+NOTE: 当引发溢出异常时，输出值取决于动态舍入模式。
+
+对于非异常情况，尾数的七个高位（在前导1之后）用于寻址下表。表的输出成为结果尾数的七个高位（在前导1之后）；结果尾数的其余部分为零。次规格化输入在查找前被规格化并适当调整指数。输出指数被选择以使结果近似参数的倒数，次规格化输出相应地被反规格化。
+
+更精确地说，结果计算如下。如果输入为规格化，设规格化输入指数等于输入指数，否则等于0减去尾数中前导零的数量。规格化输出指数等于(2*B - 1 - 规格化输入指数)。如果规格化输出指数在范围[-1, 2*B]之外，结果对应上表中的异常情况之一。
+
+如果输入为次规格化，规格化输入尾数通过将输入尾数左移1减去规格化输入指数位得到，丢弃前导1位。否则，规格化输入尾数等于输入尾数。下表给出了规格化输出尾数的七个MSB，作为规格化输入尾数的七个MSB的函数；规格化输出尾数的其他位为零。
+
+include::images/wavedrom/vfrec7.edn[]
+
+如果规格化输出指数为0或-1，结果为次规格化：输出指数为0，输出尾数通过在规格化输出尾数左侧连接1位，然后将该量右移1减去规格化输出指数得到。否则，输出指数等于规格化输出指数，输出尾数等于规格化输出尾数。输出符号等于输入符号。
+
+NOTE: 例如，当SEW=32时，vfrec7(0x00718abc ({approx} 1.043e-38)) = 0x7e900000 ({approx} 9.570e37)，vfrec7(0x7f765432 ({approx} 3.274e38)) = 0x00214000 ({approx} 3.053e-39)。
+
+NOTE: 选择7位精度是因为它需要0、1、2、3次牛顿-拉夫逊迭代分别收敛到接近bfloat16、FP16、FP32、FP64精度。未来可以定义具有更高估计精度的指令。
+
+==== 向量浮点最小/最大指令
+
+向量浮点 `vfmin` 和 `vfmax` 指令具有与RISC-V F/D/Q扩展版本2.2中相应标量浮点指令相同的行为：它们对活动元素执行 `minimumNumber` 或 `maximumNumber` 操作。
+
+----
+# 浮点最小值
+vfmin.vv vd, vs2, vs1, vm   # 向量-向量
+vfmin.vf vd, vs2, rs1, vm   # 向量-标量
+
+# 浮点最大值
+vfmax.vv vd, vs2, vs1, vm   # 向量-向量
+vfmax.vf vd, vs2, rs1, vm   # 向量-标量
+----
+
+==== 向量浮点符号注入指令
+
+标量符号注入指令的向量版本。结果从向量 `vs2` 操作数中获取除符号位之外的所有位。
+
+----
+vfsgnj.vv vd, vs2, vs1, vm   # 向量-向量
+vfsgnj.vf vd, vs2, rs1, vm   # 向量-标量
+
+vfsgnjn.vv vd, vs2, vs1, vm  # 向量-向量
+vfsgnjn.vf vd, vs2, rs1, vm  # 向量-标量
+
+vfsgnjx.vv vd, vs2, vs1, vm  # 向量-向量
+vfsgnjx.vf vd, vs2, rs1, vm  # 向量-标量
+----
+
+NOTE: 可以使用两个源操作数都设置为相同向量操作数的符号注入指令对浮点值向量进行取反。提供了汇编伪指令：`vfneg.v vd,vs` = `vfsgnjn.vv vd,vs,vs`。
+
+NOTE: 可以使用两个源操作数都设置为相同向量操作数的符号注入指令计算浮点元素向量的绝对值。提供了汇编伪指令：`vfabs.v vd,vs` = `vfsgnjx.vv vd,vs,vs`。
+
+==== 向量浮点比较指令
+
+这些向量FP比较指令比较两个源操作数并将比较结果写入掩码寄存器。目标掩码向量总是保存在单个向量寄存器中，元素布局如 <<sec-mask-register-layout>> 中所述。目标掩码向量寄存器可以与源向量掩码寄存器（`v0`）相同。比较写入掩码寄存器，因此总是在尾部无关策略下操作。
+
+比较指令遵循标量浮点比较指令的语义。`vmfeq` 和 `vmfne` 仅在信号NaN输入上引发无效操作异常。`vmflt`、`vmfle`、`vmfgt` 和 `vmfge` 在信号和静默NaN输入上都引发无效操作异常。当任一操作数为NaN时，`vmfne` 向目标元素写入1，而其他比较在任一操作数为NaN时写入0。
+
+----
+# 比较相等
+vmfeq.vv vd, vs2, vs1, vm  # 向量-向量
+vmfeq.vf vd, vs2, rs1, vm  # 向量-标量
+
+# 比较不相等
+vmfne.vv vd, vs2, vs1, vm  # 向量-向量
+vmfne.vf vd, vs2, rs1, vm  # 向量-标量
+
+# 比较小于
+vmflt.vv vd, vs2, vs1, vm  # 向量-向量
+vmflt.vf vd, vs2, rs1, vm  # 向量-标量
+
+# 比较小于等于
+vmfle.vv vd, vs2, vs1, vm  # 向量-向量
+vmfle.vf vd, vs2, rs1, vm  # 向量-标量
+
+# 比较大于
+vmfgt.vf vd, vs2, rs1, vm  # 向量-标量
+
+# 比较大于等于
+vmfge.vf vd, vs2, rs1, vm  # 向量-标量
+----
+
+----
+比较            汇编器映射                    汇编器伪指令
+
+va < vb         vmflt.vv vd, va, vb, vm
+va <= vb        vmfle.vv vd, va, vb, vm
+va > vb         vmflt.vv vd, vb, va, vm    vmfgt.vv vd, va, vb, vm
+va >= vb        vmfle.vv vd, vb, va, vm    vmfge.vv vd, va, vb, vm
+
+va < f          vmflt.vf vd, va, f, vm
+va <= f         vmfle.vf vd, va, f, vm
+va > f          vmfgt.vf vd, va, f, vm
+va >= f         vmfge.vf vd, va, f, vm
+
+va, vb 向量寄存器组
+f      标量浮点寄存器
+----
+
+NOTE: 提供所有形式是正确处理NaN的无序比较所必需的。
+
+NOTE: C99浮点静默比较可以通过在任一输入为NaN时屏蔽信号比较来实现，如下所示。当比较数是非NaN常数时，可以省略中间两个指令。
+
+----
+# 实现isgreater()的示例
+vmfeq.vv v0, va, va        # 仅在A不是NaN时设置
+vmfeq.vv v1, vb, vb        # 仅在B不是NaN时设置
+vmand.mm v0, v0, v1        # 仅在A和B有序时设置，
+vmfgt.vv v0, va, vb, v0.t  #  因此仅在有序值上设置标志
+----
+
+NOTE: 在上述序列中，很容易想到屏蔽第二个 `vmfeq` 指令并移除 `vmand` 指令，但这种更高效的序列在 `va` 的元素包含静默NaN而 `vb` 中相应元素包含信号NaN时错误地未能引发无效异常。
+
+==== 向量浮点分类指令
+
+这是一元向量-向量指令，其操作方式与标量分类指令相同。
+
+----
+vfclass.v vd, vs2, vm   # 向量-向量
+----
+
+该指令产生的10位掩码放置在结果元素的最低有效位中。结果的高(SEW-10)位用零填充。指令仅为SEW=16b及以上定义，因此结果将始终适合目标元素。
+
+==== 向量浮点合并指令
+
+提供了向量-标量浮点合并指令，它对从 `vstart` 到 `vl` 中当前向量长度的所有主体元素进行操作，无论掩码值如何。
+
+`vfmerge.vfm` 指令编码为掩码指令（`vm=0`）。在掩码值为零的元素处，第一个向量操作数被复制到目标元素，否则标量浮点寄存器值被复制到目标元素。
+
+----
+vfmerge.vfm vd, vs2, rs1, v0  # vd[i] = v0.mask[i] ? f[rs1] : vs2[i]
+----
+
+==== 向量浮点移动指令
+
+向量浮点移动指令将浮点标量操作数 __分散__ 到向量寄存器组。指令将标量 `f` 寄存器值复制到向量寄存器组的所有活动元素。该指令编码为无掩码指令（`vm=1`）。指令必须将 `vs2` 字段设置为 `v0`，`vs2` 的所有其他值都被保留。
+
+----
+vfmv.v.f vd, rs1  # vd[i] = f[rs1]
+----
+
+NOTE: `vfmv.v.f` 指令与 `vfmerge.vfm` 指令共享编码，但使用 `vm=1` 和 `vs2=v0`。
+
+==== 单宽度浮点/整数类型转换指令
+
+提供转换操作以在浮点值和无符号及有符号整数之间进行转换，其中源和目标都是SEW宽。
+
+----
+vfcvt.xu.f.v vd, vs2, vm       # 将浮点转换为无符号整数
+vfcvt.x.f.v  vd, vs2, vm       # 将浮点转换为有符号整数
+
+vfcvt.rtz.xu.f.v vd, vs2, vm   # 将浮点转换为无符号整数，截断
+vfcvt.rtz.x.f.v  vd, vs2, vm   # 将浮点转换为有符号整数，截断
+
+vfcvt.f.xu.v vd, vs2, vm       # 将无符号整数转换为浮点
+vfcvt.f.x.v  vd, vs2, vm       # 将有符号整数转换为浮点
+----
+
+转换在异常条件下遵循与标量转换指令相同的规则。转换使用 `frm` 中的动态舍入模式，除了 `rtz` 变体，它向零舍入。
+
+NOTE: 提供 `rtz` 变体是为了加速从浮点到整数的截断转换，这在C和Java等语言中很常见。
+
+==== 扩宽浮点/整数类型转换指令
+
+提供一组转换指令以在较窄的整数和浮点数据类型与两倍宽度的类型之间进行转换。
+
+----
+vfwcvt.xu.f.v vd, vs2, vm       # 将浮点转换为双宽度无符号整数
+vfwcvt.x.f.v  vd, vs2, vm       # 将浮点转换为双宽度有符号整数
+
+vfwcvt.rtz.xu.f.v vd, vs2, vm   # 将浮点转换为双宽度无符号整数，截断
+vfwcvt.rtz.x.f.v  vd, vs2, vm   # 将浮点转换为双宽度有符号整数，截断
+
+vfwcvt.f.xu.v vd, vs2, vm       # 将无符号整数转换为双宽度浮点
+vfwcvt.f.x.v  vd, vs2, vm       # 将有符号整数转换为双宽度浮点
+
+vfwcvt.f.f.v vd, vs2, vm        # 将单宽度浮点转换为双宽度浮点
+----
+
+这些指令与其他扩宽指令具有相同的向量寄存器重叠约束（参见 <<sec-widening>>）。
+
+NOTE: 双宽度IEEE浮点值总是可以精确表示单宽度整数。
+
+NOTE: 双宽度IEEE浮点值总是可以精确表示单宽度IEEE浮点值。
+
+NOTE: 不支持完整的浮点扩宽转换集作为单个指令，但任何扩宽转换都可以实现为几个加倍步骤，具有等效结果且不引发额外的异常标志。
+
+==== 收窄浮点/整数类型转换指令
+
+提供一组转换指令以将较宽的整数和浮点数据类型转换为一半宽度的类型。
+
+----
+vfncvt.xu.f.w vd, vs2, vm       # 将双宽度浮点转换为无符号整数
+vfncvt.x.f.w  vd, vs2, vm       # 将双宽度浮点转换为有符号整数
+
+vfncvt.rtz.xu.f.w vd, vs2, vm   # 将双宽度浮点转换为无符号整数，截断
+vfncvt.rtz.x.f.w  vd, vs2, vm   # 将双宽度浮点转换为有符号整数，截断
+
+vfncvt.f.xu.w vd, vs2, vm       # 将双宽度无符号整数转换为浮点
+vfncvt.f.x.w  vd, vs2, vm       # 将双宽度有符号整数转换为浮点
+
+vfncvt.f.f.w vd, vs2, vm        # 将双宽度浮点转换为单宽度浮点
+vfncvt.rod.f.f.w vd, vs2, vm    # 将双宽度浮点转换为单宽度浮点，
+                                #  向奇数舍入
+----
+
+这些指令与其他收窄指令具有相同的向量寄存器重叠约束（参见 <<sec-narrowing>>）。
+
+NOTE: 不支持完整的浮点收窄转换集作为单个指令。转换可以在一系列减半步骤中实现。如果除最后一个减半步骤外的所有步骤都使用向奇数舍入（`vfncvt.rod.f.f.w`），则结果等效舍入并引发相同的异常标志。只有最后一步应该使用所需的舍入模式。
+
+NOTE: 对于 `vfncvt.rod.f.f.w`，超出目标格式范围的有限值将转换为目标格式的具有相同符号的最大有限值。
+
+=== 向量整数算术指令
+
+向量整数算术指令类似于相应的标量指令集，但应用于向量值。
+本节按操作和目标类型组织。具有相同目标类型的操作通常使用相同的编码格式
+并共享相同的注释。
+
+==== 向量单宽度整数加法和减法
+
+----
+# 整数加法
+vadd.vv vd, vs2, vs1, vm   # Vector-vector
+vadd.vx vd, vs2, rs1, vm   # vector-scalar  
+vadd.vi vd, vs2, imm, vm   # vector-immediate
+
+# 整数减法
+vsub.vv vd, vs2, vs1, vm   # Vector-vector
+vsub.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 反向减法
+vrsub.vx vd, vs2, rs1, vm   # vd[i] = x[rs1] - vs2[i]
+vrsub.vi vd, vs2, imm, vm   # vd[i] = imm - vs2[i]
+----
+
+NOTE: 没有提供减法立即数指令，因为减去立即数可以通过加上带符号立即数的否定来执行。
+
+==== 向量扩宽整数加法/减法
+
+扩宽加法和减法指令是提供的，可以生成两倍宽度的结果。
+第一个操作数可以是单宽度或双宽度，第二个操作数可以是单宽度。
+如果第一个操作数是双宽度，操作是扩宽；如果两个操作数都是单宽度，操作也是扩宽。
+
+----
+# 扩宽无符号整数加法/减法，第二个和第一个操作数均为单宽度值
+vwaddu.vv  vd, vs2, vs1, vm  # vd[i] = zero_extend(vs2[i]) + zero_extend(vs1[i])
+vwaddu.vx  vd, vs2, rs1, vm  # vd[i] = zero_extend(vs2[i]) + zero_extend(x[rs1])
+
+vwsubu.vv  vd, vs2, vs1, vm  # vd[i] = zero_extend(vs2[i]) - zero_extend(vs1[i])
+vwsubu.vx  vd, vs2, rs1, vm  # vd[i] = zero_extend(vs2[i]) - zero_extend(x[rs1])
+
+# 扩宽有符号整数加法/减法，第二个和第一个操作数均为单宽度值
+vwadd.vv   vd, vs2, vs1, vm  # vd[i] = sign_extend(vs2[i]) + sign_extend(vs1[i])
+vwadd.vx   vd, vs2, rs1, vm  # vd[i] = sign_extend(vs2[i]) + sign_extend(x[rs1])
+
+vwsub.vv   vd, vs2, vs1, vm  # vd[i] = sign_extend(vs2[i]) - sign_extend(vs1[i])
+vwsub.vx   vd, vs2, rs1, vm  # vd[i] = sign_extend(vs2[i]) - sign_extend(x[rs1])
+
+# 扩宽加法/减法，第二个操作数单宽度，第一个操作数双宽度
+vwaddu.wv  vd, vs2, vs1, vm  # vd[i] = vs2[i] + zero_extend(vs1[i])
+vwaddu.wx  vd, vs2, rs1, vm  # vd[i] = vs2[i] + zero_extend(x[rs1])
+
+vwsubu.wv  vd, vs2, vs1, vm  # vd[i] = vs2[i] - zero_extend(vs1[i])
+vwsubu.wx  vd, vs2, rs1, vm  # vd[i] = vs2[i] - zero_extend(x[rs1])
+
+vwadd.wv   vd, vs2, vs1, vm  # vd[i] = vs2[i] + sign_extend(vs1[i])
+vwadd.wx   vd, vs2, rs1, vm  # vd[i] = vs2[i] + sign_extend(x[rs1])
+
+vwsub.wv   vd, vs2, vs1, vm  # vd[i] = vs2[i] - sign_extend(vs1[i])
+vwsub.wx   vd, vs2, rs1, vm  # vd[i] = vs2[i] - sign_extend(x[rs1])
+----
+
+==== 向量整数加法/减法带进位/借位
+
+为了支持多字算术，提供了向量加法和减法指令，这些指令的进位或借位由掩码寄存器提供。
+对于 `vadc` 和 `vsbc`，指令编码如果目标向量寄存器是 `v0` 则保留。
+
+----
+# 产生带进位的和。
+
+# vd[i] = vs2[i] + vs1[i] + v0.mask[i]
+vadc.vvm   vd, vs2, vs1, v0  # Vector-vector
+
+# vd[i] = vs2[i] + x[rs1] + v0.mask[i]
+vadc.vxm   vd, vs2, rs1, v0  # Vector-scalar
+
+# vd[i] = vs2[i] + imm + v0.mask[i]
+vadc.vim   vd, vs2, imm, v0  # Vector-immediate
+
+# 在掩码寄存器格式中产生进位输出
+
+# vd.mask[i] = carry_out(vs2[i] + vs1[i] + v0.mask[i])
+vmadc.vvm   vd, vs2, vs1, v0  # Vector-vector
+
+# vd.mask[i] = carry_out(vs2[i] + x[rs1] + v0.mask[i])
+vmadc.vxm   vd, vs2, rs1, v0  # Vector-scalar
+
+# vd.mask[i] = carry_out(vs2[i] + imm + v0.mask[i])
+vmadc.vim   vd, vs2, imm, v0  # Vector-immediate
+
+# vd.mask[i] = carry_out(vs2[i] + vs1[i])
+vmadc.vv    vd, vs2, vs1      # Vector-vector，无进位输入
+
+# vd.mask[i] = carry_out(vs2[i] + x[rs1])
+vmadc.vx    vd, vs2, rs1      # Vector-scalar，无进位输入
+
+# vd.mask[i] = carry_out(vs2[i] + imm)
+vmadc.vi    vd, vs2, imm      # Vector-immediate，无进位输入
+----
+
+由于实现进位传播需要执行两条输入不变的指令，破坏性累加将需要额外的移动来获得正确的结果。
+
+----
+# 多字算术序列示例，累加到 v4
+vmadc.vvm v1, v4, v8, v0  # 获得进位到临时寄存器 v1
+vadc.vvm v4, v4, v8, v0   # 计算新的和
+vmmv.m v0, v1             # 将临时进位移动到 v0 用于下一个字
+----
+
+带借位减法指令 `vsbc` 执行等效功能以支持减法的长字算术。没有立即数减法指令。
+
+----
+# 产生带借位的差。
+
+# vd[i] = vs2[i] - vs1[i] - v0.mask[i]
+vsbc.vvm   vd, vs2, vs1, v0  # Vector-vector
+
+# vd[i] = vs2[i] - x[rs1] - v0.mask[i]
+vsbc.vxm   vd, vs2, rs1, v0  # Vector-scalar
+
+# 在掩码寄存器格式中产生借位输出
+
+# vd.mask[i] = borrow_out(vs2[i] - vs1[i] - v0.mask[i])
+vmsbc.vvm   vd, vs2, vs1, v0  # Vector-vector
+
+# vd.mask[i] = borrow_out(vs2[i] - x[rs1] - v0.mask[i])
+vmsbc.vxm   vd, vs2, rs1, v0  # Vector-scalar
+
+# vd.mask[i] = borrow_out(vs2[i] - vs1[i])
+vmsbc.vv    vd, vs2, vs1      # Vector-vector，无借位输入
+
+# vd.mask[i] = borrow_out(vs2[i] - x[rs1])
+vmsbc.vx    vd, vs2, rs1      # Vector-scalar，无借位输入
+----
+
+对于 `vmsbc`，借位定义为当差值（在截断之前）为负时为 1。
+
+对于 `vadc` 和 `vsbc`，如果目标向量寄存器是 `v0`，则指令编码保留。
+
+NOTE: 此约束对应于覆盖掩码寄存器的被掩码向量操作的约束。
+
+==== 向量按位逻辑指令
+
+----
+# 按位逻辑操作。
+vand.vv vd, vs2, vs1, vm   # Vector-vector
+vand.vx vd, vs2, rs1, vm   # vector-scalar
+vand.vi vd, vs2, imm, vm   # vector-immediate
+
+vor.vv vd, vs2, vs1, vm    # Vector-vector
+vor.vx vd, vs2, rs1, vm    # vector-scalar
+vor.vi vd, vs2, imm, vm    # vector-immediate
+
+vxor.vv vd, vs2, vs1, vm    # Vector-vector
+vxor.vx vd, vs2, rs1, vm    # vector-scalar
+vxor.vi vd, vs2, imm, vm    # vector-immediate
+----
+
+NOTE: 使用立即数 -1，`vxor` 指令的标量立即数形式提供按位 NOT 操作。这作为汇编伪指令提供：`vnot.v vd,vs,vm` = `vxor.vi vd,vs,-1,vm`。
+
+==== 向量单宽度移位指令
+
+提供了完整的向量移位指令集，包括逻辑左移（`sll`）、逻辑右移（零扩展 `srl`）和算术右移（符号扩展 `sra`）。要移位的数据位于 `vs2` 指定的向量寄存器组中，移位量值可以来自向量寄存器组 `vs1`、标量整数寄存器 `rs1` 或零扩展的 5 位立即数。只有移位量值的低 lg2(SEW) 位用于控制移位量。
+
+----
+# 位移操作
+vsll.vv vd, vs2, vs1, vm   # Vector-vector
+vsll.vx vd, vs2, rs1, vm   # vector-scalar
+vsll.vi vd, vs2, uimm, vm   # vector-immediate
+
+vsrl.vv vd, vs2, vs1, vm   # Vector-vector
+vsrl.vx vd, vs2, rs1, vm   # vector-scalar
+vsrl.vi vd, vs2, uimm, vm   # vector-immediate
+
+vsra.vv vd, vs2, vs1, vm   # Vector-vector
+vsra.vx vd, vs2, rs1, vm   # vector-scalar
+vsra.vi vd, vs2, uimm, vm   # vector-immediate
+----
+
+==== 向量收窄整数右移指令
+
+收窄右移从更宽的操作数中提取较小的字段，具有零扩展（`srl`）和符号扩展（`sra`）两种形式。移位量可以来自向量寄存器组、标量 `x` 寄存器或零扩展的 5 位立即数。使用移位量值的低 lg2(2*SEW) 位（例如，对于 SEW=64 位到 SEW=32 位的收窄操作，使用低 6 位）。
+
+----
+ # 收窄逻辑右移，SEW = (2*SEW) >> SEW
+ vnsrl.wv vd, vs2, vs1, vm   # vector-vector
+ vnsrl.wx vd, vs2, rs1, vm   # vector-scalar
+ vnsrl.wi vd, vs2, uimm, vm   # vector-immediate
+
+ # 收窄算术右移，SEW = (2*SEW) >> SEW
+ vnsra.wv vd, vs2, vs1, vm   # vector-vector
+ vnsra.wx vd, vs2, rs1, vm   # vector-scalar
+ vnsra.wi vd, vs2, uimm, vm   # vector-immediate
+----
+
+NOTE: 未来的扩展可能添加对收窄到源宽度 1/4 的目标的版本的支持。
+
+NOTE: 整数值可以使用带有 `x0` 标量操作数的收窄整数移位指令减半宽度。提供汇编伪指令 `vncvt.x.x.w vd,vs,vm` = `vnsrl.wx vd,vs,x0,vm`。
+
+==== 向量整数比较指令
+
+以下整数比较指令在比较结果为真时向目标掩码寄存器元素写入 1，否则写入 0。目标掩码向量始终保存在单个向量寄存器中，元素布局如 <<sec-mask-register-layout>> 中描述。目标掩码向量寄存器可以与源向量掩码寄存器（`v0`）相同。
+
+----
+# 设置如果相等
+vmseq.vv vd, vs2, vs1, vm  # Vector-vector
+vmseq.vx vd, vs2, rs1, vm  # vector-scalar
+vmseq.vi vd, vs2, imm, vm  # vector-immediate
+
+# 设置如果不相等
+vmsne.vv vd, vs2, vs1, vm  # Vector-vector
+vmsne.vx vd, vs2, rs1, vm  # vector-scalar
+vmsne.vi vd, vs2, imm, vm  # vector-immediate
+
+# 设置如果小于，无符号
+vmsltu.vv vd, vs2, vs1, vm  # Vector-vector
+vmsltu.vx vd, vs2, rs1, vm  # Vector-scalar
+
+# 设置如果小于，有符号
+vmslt.vv vd, vs2, vs1, vm  # Vector-vector
+vmslt.vx vd, vs2, rs1, vm  # vector-scalar
+
+# 设置如果小于等于，无符号
+vmsleu.vv vd, vs2, vs1, vm   # Vector-vector
+vmsleu.vx vd, vs2, rs1, vm   # vector-scalar
+vmsleu.vi vd, vs2, imm, vm   # Vector-immediate
+
+# 设置如果小于等于，有符号
+vmsle.vv vd, vs2, vs1, vm  # Vector-vector
+vmsle.vx vd, vs2, rs1, vm  # vector-scalar
+vmsle.vi vd, vs2, imm, vm  # vector-immediate
+
+# 设置如果大于，无符号
+vmsgtu.vx vd, vs2, rs1, vm   # Vector-scalar
+vmsgtu.vi vd, vs2, imm, vm   # Vector-immediate
+
+# 设置如果大于，有符号
+vmsgt.vx vd, vs2, rs1, vm    # Vector-scalar
+vmsgt.vi vd, vs2, imm, vm    # Vector-immediate
+
+# 以下两条指令不直接提供
+# 设置如果大于等于，无符号
+# vmsgeu.vx vd, vs2, rs1, vm    # Vector-scalar
+# 设置如果大于等于，有符号
+# vmsge.vx vd, vs2, rs1, vm    # Vector-scalar
+----
+
+下表说明如何在原生机器代码中实现所有比较。
+
+----
+比较            汇编器映射                    汇编伪指令
+
+va < vb         vmslt{u}.vv vd, va, vb, vm
+va <= vb        vmsle{u}.vv vd, va, vb, vm
+va > vb         vmslt{u}.vv vd, vb, va, vm    vmsgt{u}.vv vd, va, vb, vm
+va >= vb        vmsle{u}.vv vd, vb, va, vm    vmsge{u}.vv vd, va, vb, vm
+
+va < x          vmslt{u}.vx vd, va, x, vm
+va <= x         vmsle{u}.vx vd, va, x, vm
+va > x          vmsgt{u}.vx vd, va, x, vm
+va >= x         见下文
+
+va < i          vmsle{u}.vi vd, va, i-1, vm    vmslt{u}.vi vd, va, i, vm
+va <= i         vmsle{u}.vi vd, va, i, vm
+va > i          vmsgt{u}.vi vd, va, i, vm
+va >= i         vmsgt{u}.vi vd, va, i-1, vm    vmsge{u}.vi vd, va, i, vm
+
+va, vb 向量寄存器组
+x      标量整数寄存器
+i      立即数
+----
+
+NOTE: 不提供 `vmslt{u}.vi` 的立即数形式，因为立即数值可以减 1 并改用 `vmsle{u}.vi` 变种。`vmsle.vi` 范围是 -16 到 15，导致有效的 `vmslt.vi` 范围是 -15 到 16。`vmsleu.vi` 范围是 0 到 15，给出有效的 `vmsltu.vi` 范围 1 到 16（注意，带立即数 0 的 `vmsltu.vi` 无用，因为它总是假）。
+
+NOTE: 由于 5 位向量立即数总是符号扩展，当 `simm5` 立即数的高位设置时，`vmsleu.vi` 也支持范围 `2^SEW^-16` 到 `2^SEW^-1` 的无符号立即数值，允许对应的 `vmsltu.vi` 与范围 `2^SEW^-15` 到 `2^SEW^` 的无符号立即数进行比较。注意带立即数 `2^SEW^` 的 `vmsltu.vi` 无用，因为它总是真。
+
+类似地，不提供 `vmsge{u}.vi`，比较使用 `vmsgt{u}.vi` 实现，立即数减一。结果有效的 `vmsge.vi` 范围是 -15 到 16，结果有效的 `vmsgeu.vi` 范围是 1 到 16（注意，带立即数 0 的 `vmsgeu.vi` 无用，因为它总是真）。
+
+NOTE: 提供寄存器标量和立即数的 `vmsgt` 形式是为了允许单个比较指令提供正确的掩码值极性，而无需使用额外的掩码逻辑指令。
+
+为了减少编码空间，不直接提供 `vmsge{u}.vx` 形式，因此 `va {ge} x` 情况需要特殊处理。
+
+NOTE: `vmsge{u}.vx` 可能在 `vmslt{u}` 的未使用 OPIVI 变种下以非正交方式编码。然而，这些将是 OPIVI 中使用标量 `x` 寄存器的唯一指令。或者，可以使用另外两个 funct6 编码，但这些与同一组 8 个 funct6 编码中的其他指令相比将具有不同的操作数格式（写入掩码寄存器）。当前的记录是省略这些指令并在需要时按下述方式合成。
+
+当已知这不会使 `x` 中的表示下溢时，可以通过将 `x` 的值减 1 并使用 `vmsgt{u}.vx` 指令来合成 `vmsge{u}.vx` 操作。
+
+----
+合成 `vmsge{u}.vx` 指令的序列
+
+va >= x,  x > minimum
+
+   addi t0, x, -1; vmsgt{u}.vx vd, va, t0, vm
+----
+
+上述序列通常是最有效的实现，但可以为 `x` 范围未知的情况提供汇编伪指令。
+
+----
+无掩码 va >= x
+
+  伪指令: vmsge{u}.vx vd, va, x
+  展开: vmslt{u}.vx vd, va, x; vmnand.mm vd, vd, vd
+
+有掩码 va >= x, vd != v0
+
+  伪指令: vmsge{u}.vx vd, va, x, v0.t
+  展开: vmslt{u}.vx vd, va, x, v0.t; vmxor.mm vd, vd, v0
+
+有掩码 va >= x, vd == v0
+
+  伪指令: vmsge{u}.vx vd, va, x, v0.t, vt
+  展开: vmslt{u}.vx vt, va, x;  vmandn.mm vd, vd, vt
+
+有掩码 va >= x, vd == v0
+
+  伪指令: vmsge{u}.vx vd, va, x, v0.t, vt
+  展开: vmslt{u}.vx vt, va, x;  vmandn.mm vt, v0, vt;  vmandn.mm vd, vd, v0;  vmor.mm vd, vt, vd
+
+  伪指令的 vt 参数必须命名一个与 vd 不同的临时向量寄存器，伪指令将破坏该寄存器
+----
+
+在掩码不扰乱策略下，如果目标寄存器是 `v0`，比较有效地在掩码中进行 AND 操作，例如，
+
+----
+# 在掩码不扰乱时使用两条指令执行 (a < b) && (b < c)
+vmslt.vv    v0, va, vb        # 写入所有主体元素
+vmslt.vv    v0, vb, vc, v0.t  # 仅在设置掩码处更新
+----
+
+比较写入掩码寄存器，因此总是在尾部无关策略下操作。
+
+==== 向量整数最小/最大指令
+
+支持有符号和无符号整数最小值和最大值指令。
+
+----
+# 无符号最小值
+vminu.vv vd, vs2, vs1, vm   # Vector-vector
+vminu.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 有符号最小值
+vmin.vv vd, vs2, vs1, vm   # Vector-vector
+vmin.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 无符号最大值
+vmaxu.vv vd, vs2, vs1, vm   # Vector-vector
+vmaxu.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 有符号最大值
+vmax.vv vd, vs2, vs1, vm   # Vector-vector
+vmax.vx vd, vs2, rs1, vm   # vector-scalar
+----
+
+==== 向量单宽度整数乘法指令
+
+单宽度乘法指令执行 SEW 位×SEW 位乘法以生成 2*SEW 位乘积，然后在 SEW 位宽目标中返回乘积的一半。`*mul*` 版本将乘积的低字写入目标寄存器，而 `*mulh*` 版本将乘积的高字写入目标寄存器。
+
+----
+# 有符号乘法，返回乘积的低位
+vmul.vv vd, vs2, vs1, vm   # Vector-vector
+vmul.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 有符号乘法，返回乘积的高位
+vmulh.vv vd, vs2, vs1, vm   # Vector-vector
+vmulh.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 无符号乘法，返回乘积的高位
+vmulhu.vv vd, vs2, vs1, vm   # Vector-vector
+vmulhu.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 有符号(vs2)-无符号乘法，返回乘积的高位
+vmulhsu.vv vd, vs2, vs1, vm   # Vector-vector
+vmulhsu.vx vd, vs2, rs1, vm   # vector-scalar
+----
+
+NOTE: 没有 `vmulhus.vx` 操作码来返回无符号向量×有符号标量乘积的高半部分。标量可以展开到向量，然后使用 `vmulhsu.vv`。
+
+NOTE: 当前的 `vmulh*` 操作码执行简单的分数乘法，但没有缩放、舍入和/或饱和结果的选项。未来可能的扩展可以考虑 `vmulh`、`vmulhu`、`vmulhsu` 的变种，在丢弃乘积的低半部分时使用 `vxrm` 舍入模式。在这些情况下没有溢出的可能性。
+
+==== 向量整数除法指令
+
+除法和余数指令等效于 RISC-V 标准标量整数乘法/除法，对于极值输入具有相同的结果。
+
+----
+# 无符号除法。
+vdivu.vv vd, vs2, vs1, vm   # Vector-vector
+vdivu.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 有符号除法
+vdiv.vv vd, vs2, vs1, vm   # Vector-vector
+vdiv.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 无符号余数
+vremu.vv vd, vs2, vs1, vm   # Vector-vector
+vremu.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 有符号余数
+vrem.vv vd, vs2, vs1, vm   # Vector-vector
+vrem.vx vd, vs2, rs1, vm   # vector-scalar
+----
+
+NOTE: 包含整数除法和余数的决定是有争议的。支持的论点是，如果没有标准指令，软件将不得不选择一些算法来执行操作，这在某些微架构与其他微架构相比可能表现不佳。
+
+NOTE: 没有执行"标量除以向量"操作的指令。
+
+==== 向量扩宽整数乘法指令
+
+扩宽整数乘法指令从 SEW 位×SEW 位乘法返回完整的 2*SEW 位乘积。
+
+----
+# 扩宽有符号整数乘法
+vwmul.vv  vd, vs2, vs1, vm # vector-vector
+vwmul.vx  vd, vs2, rs1, vm # vector-scalar
+
+# 扩宽无符号整数乘法
+vwmulu.vv vd, vs2, vs1, vm # vector-vector
+vwmulu.vx vd, vs2, rs1, vm # vector-scalar
+
+# 扩宽有符号(vs2)-无符号整数乘法
+vwmulsu.vv vd, vs2, vs1, vm # vector-vector
+vwmulsu.vx vd, vs2, rs1, vm # vector-scalar
+----
+
+==== 向量单宽度整数乘法加法指令
+
+整数乘法加法指令是破坏性的，提供两种形式，一种覆盖被加数或被减数（`vmacc`、`vnmsac`），另一种覆盖第一个乘数（`vmadd`、`vnmsub`）。
+
+乘积的低半部分与第三个操作数相加或相减。
+
+NOTE: `sac` 旨在读作"从累加器减去"。操作码是 `vnmsac` 以匹配（不幸地违反直觉的）浮点 `fnmsub` 指令定义。`vnmsub` 操作码类似。
+
+----
+# 整数乘法加法，覆盖被加数
+vmacc.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vmacc.vx vd, rs1, vs2, vm    # vd[i] = +(x[rs1] * vs2[i]) + vd[i]
+
+# 整数乘法减法，覆盖被减数
+vnmsac.vv vd, vs1, vs2, vm    # vd[i] = -(vs1[i] * vs2[i]) + vd[i]
+vnmsac.vx vd, rs1, vs2, vm    # vd[i] = -(x[rs1] * vs2[i]) + vd[i]
+
+# 整数乘法加法，覆盖乘数
+vmadd.vv vd, vs1, vs2, vm    # vd[i] = (vs1[i] * vd[i]) + vs2[i]
+vmadd.vx vd, rs1, vs2, vm    # vd[i] = (x[rs1] * vd[i]) + vs2[i]
+
+# 整数乘法减法，覆盖乘数
+vnmsub.vv vd, vs1, vs2, vm    # vd[i] = -(vs1[i] * vd[i]) + vs2[i]
+vnmsub.vx vd, rs1, vs2, vm    # vd[i] = -(x[rs1] * vd[i]) + vs2[i]
+----
+
+==== 向量扩宽整数乘法加法指令
+
+扩宽整数乘法加法指令将 SEW 位×SEW 位乘法的完整 2*SEW 位乘积添加到 2*SEW 位值并产生 2*SEW 位结果。支持有符号和无符号乘法操作数的所有组合。
+
+----
+# 扩宽无符号整数乘法加法，覆盖被加数
+vwmaccu.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vwmaccu.vx vd, rs1, vs2, vm    # vd[i] = +(x[rs1] * vs2[i]) + vd[i]
+
+# 扩宽有符号整数乘法加法，覆盖被加数
+vwmacc.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vwmacc.vx vd, rs1, vs2, vm    # vd[i] = +(x[rs1] * vs2[i]) + vd[i]
+
+# 扩宽有符号-无符号整数乘法加法，覆盖被加数
+vwmaccsu.vv vd, vs1, vs2, vm  # vd[i] = +(signed(vs1[i]) * unsigned(vs2[i])) + vd[i]
+vwmaccsu.vx vd, rs1, vs2, vm  # vd[i] = +(signed(x[rs1]) * unsigned(vs2[i])) + vd[i]
+
+# 扩宽无符号-有符号整数乘法加法，覆盖被加数
+vwmaccus.vx vd, rs1, vs2, vm  # vd[i] = +(unsigned(x[rs1]) * signed(vs2[i])) + vd[i]
+----
+
+==== 向量整数合并指令
+
+向量整数合并指令基于掩码组合两个源操作数。与常规算术指令不同，合并操作在所有主体元素上进行（即，从 `vstart` 到 `vl` 中当前向量长度的元素集）。
+
+`vmerge` 指令被编码为被掩码指令（`vm=0`）。指令按如下方式组合两个源。在掩码值为零的元素处，第一个操作数被复制到目标元素，否则第二个操作数被复制到目标元素。第一个操作数总是由 `vs2` 指定的向量寄存器组。第二个操作数是由 `vs1` 指定的向量寄存器组或由 `rs1` 指定的标量 `x` 寄存器或 5 位符号扩展立即数。
+
+----
+vmerge.vvm vd, vs2, vs1, v0  # vd[i] = v0.mask[i] ? vs1[i] : vs2[i]
+vmerge.vxm vd, vs2, rs1, v0  # vd[i] = v0.mask[i] ? x[rs1] : vs2[i]
+vmerge.vim vd, vs2, imm, v0  # vd[i] = v0.mask[i] ? imm    : vs2[i]
+----
+
+==== 向量整数移动指令
+
+向量整数移动指令将源操作数复制到向量寄存器组。`vmv.v.v` 变种复制向量寄存器组，而 `vmv.v.x` 和 `vmv.v.i` 变种将标量寄存器或立即数__展开__到目标向量寄存器组的所有活动元素。这些指令被编码为无掩码指令（`vm=1`）。第一个操作数说明符（`vs2`）必须包含 `v0`，`vs2` 中的任何其他向量寄存器号都是_保留的_。
+
+----
+vmv.v.v vd, vs1 # vd[i] = vs1[i]
+vmv.v.x vd, rs1 # vd[i] = x[rs1]
+vmv.v.i vd, imm # vd[i] = imm
+----
+
+NOTE: 掩码值可以使用序列 `vmv.v.i vd, 0; vmerge.vim vd, vd, 1, v0` 扩宽为 SEW 宽度元素。
+
+NOTE: 向量整数移动指令与向量合并指令共享编码，但使用 `vm=1` 和 `vs2=v0`。
+
+形式 `vmv.v.v vd, vd`，它保持主体元素不变，可用于指示寄存器下次将使用等于 SEW 的 EEW。
+
+NOTE: 根据 EEW 内部重组数据的实现可以根据 SEW 混洗内部表示。不内部重组数据的实现可以动态省略此指令，并视为 NOP。
+
+NOTE: `vmv.v.v vd, vd` 指令不是 RISC-V HINT，因为尾部无关设置可能在某些实现上导致架构状态更改。
+
+[[sec-vector-fixed-point]]
+=== 向量定点算术指令
+
+前面的整数算术指令集扩展以支持定点算术。
+
+定点数是一个二进制补码有符号或无符号整数，解释为具有隐式分母的分数中的分子。定点指令旨在应用于分子；软件负责管理分母。N 位元素可以保存范围 -2^N-1^...+2^N-1^-1 的二进制补码有符号整数，以及范围 0...+2^N^-1 的无符号整数。定点指令通过支持缩放和舍入帮助在窄操作数中保持精度，并可以通过将结果饱和到目标格式范围来处理溢出。
+
+NOTE: 上述扩宽整数操作也可用于避免溢出。
+
+==== 向量单宽度饱和加法和减法
+
+提供整数加法和减法的饱和形式，适用于有符号和无符号整数。如果结果会溢出目标，结果将被替换为最接近的可表示值，并设置 `vxsat` 位。
+
+----
+# 无符号整数的饱和加法。
+vsaddu.vv vd, vs2, vs1, vm   # Vector-vector
+vsaddu.vx vd, vs2, rs1, vm   # vector-scalar
+vsaddu.vi vd, vs2, imm, vm   # vector-immediate
+
+# 有符号整数的饱和加法。
+vsadd.vv vd, vs2, vs1, vm   # Vector-vector
+vsadd.vx vd, vs2, rs1, vm   # vector-scalar
+vsadd.vi vd, vs2, imm, vm   # vector-immediate
+
+# 无符号整数的饱和减法。
+vssubu.vv vd, vs2, vs1, vm   # Vector-vector
+vssubu.vx vd, vs2, rs1, vm   # vector-scalar
+
+# 有符号整数的饱和减法。
+vssub.vv vd, vs2, vs1, vm   # Vector-vector
+vssub.vx vd, vs2, rs1, vm   # vector-scalar
+----
+
+==== 向量单宽度平均加法和减法
+
+平均加法和减法指令将结果右移一位，并根据 `vxrm` 中的设置对结果进行舍入。计算在舍入和截断之前以无限精度执行。提供无符号和有符号版本。对于 `vaaddu` 和 `vaadd`，结果中不会有溢出。对于 `vasub` 和 `vasubu`，忽略溢出，结果回绕。
+
+NOTE: 对于 `vasub`，只有在 `rnu` 或 `rne` 舍入下从最大数减去最小数时才会发生溢出。
+
+----
+# 平均加法
+
+# 无符号整数的平均加法。
+vaaddu.vv vd, vs2, vs1, vm   # roundoff_unsigned(vs2[i] + vs1[i], 1)
+vaaddu.vx vd, vs2, rs1, vm   # roundoff_unsigned(vs2[i] + x[rs1], 1)
+
+# 有符号整数的平均加法。
+vaadd.vv vd, vs2, vs1, vm   # roundoff_signed(vs2[i] + vs1[i], 1)
+vaadd.vx vd, vs2, rs1, vm   # roundoff_signed(vs2[i] + x[rs1], 1)
+
+# 平均减法
+
+# 无符号整数的平均减法。
+vasubu.vv vd, vs2, vs1, vm   # roundoff_unsigned(vs2[i] - vs1[i], 1)
+vasubu.vx vd, vs2, rs1, vm   # roundoff_unsigned(vs2[i] - x[rs1], 1)
+
+# 有符号整数的平均减法。
+vasub.vv vd, vs2, vs1, vm   # roundoff_signed(vs2[i] - vs1[i], 1)
+vasub.vx vd, vs2, rs1, vm   # roundoff_signed(vs2[i] - x[rs1], 1)
+----
+
+==== 向量单宽度分数乘法带舍入和饱和
+
+有符号分数乘法指令对两个 SEW 输入产生 2*SEW 乘积，然后将结果右移 SEW-1 位，根据 `vxrm` 对这些位进行舍入，然后将结果饱和以适合 SEW 位。如果结果导致饱和，则设置 `vxsat` 位。
+
+----
+# 有符号饱和和舍入分数乘法
+# 有关舍入计算，请参见 vxrm 描述
+vsmul.vv vd, vs2, vs1, vm  # vd[i] = clip(roundoff_signed(vs2[i]*vs1[i], SEW-1))
+vsmul.vx vd, vs2, rs1, vm  # vd[i] = clip(roundoff_signed(vs2[i]*x[rs1], SEW-1))
+----
+
+NOTE: 当乘以两个 N 位有符号数时，对于 -2^N-1^ * -2^N-1^ 产生结果 +2^2N-2^，获得最大幅度，当保持在 2N 位中时具有单个（零）符号位。所有其他乘积在 2N 位中都有两个符号位。为了在 N 个结果位中保持更高的精度，乘积右移比 N 少一位，饱和最大幅度结果，但为所有其他乘积增加一位结果精度。
+
+NOTE: 我们不提供等效的分数乘法，其中一个输入是无符号的，因为这些将保留所有上层 SEW 位并且不需要饱和。这个操作部分由 `vmulhu` 和 `vmulhsu` 指令覆盖，适用于舍入简单为截断（`rdn`）的情况。
+
+==== 向量单宽度缩放移位指令
+
+这些指令将输入值右移，并根据 `vxrm` 对移出的位进行舍入。缩放右移具有零扩展（`vssrl`）和符号扩展（`vssra`）两种形式。要移位的数据位于 `vs2` 指定的向量寄存器组中，移位量值可以来自向量寄存器组 `vs1`、标量整数寄存器 `rs1` 或零扩展的 5 位立即数。只有移位量值的低 lg2(SEW) 位用于控制移位量。
+
+----
+ # 缩放逻辑右移
+ vssrl.vv vd, vs2, vs1, vm   # vd[i] = roundoff_unsigned(vs2[i], vs1[i])
+ vssrl.vx vd, vs2, rs1, vm   # vd[i] = roundoff_unsigned(vs2[i], x[rs1])
+ vssrl.vi vd, vs2, uimm, vm  # vd[i] = roundoff_unsigned(vs2[i], uimm)
+
+ # 缩放算术右移
+ vssra.vv vd, vs2, vs1, vm   # vd[i] = roundoff_signed(vs2[i],vs1[i])
+ vssra.vx vd, vs2, rs1, vm   # vd[i] = roundoff_signed(vs2[i], x[rs1])
+ vssra.vi vd, vs2, uimm, vm  # vd[i] = roundoff_signed(vs2[i], uimm)
+----
+
+==== 向量收窄定点裁剪指令
+
+`vnclip` 指令用于将定点值打包到更窄的目标中。指令支持舍入、缩放和饱和到最终目标格式。源数据位于 `vs2` 指定的向量寄存器组中。缩放移位量值可以来自向量寄存器组 `vs1`、标量整数寄存器 `rs1` 或零扩展的 5 位立即数。向量或标量移位量值的低 lg2(2*SEW) 位（例如，对于 SEW=64 位到 SEW=32 位的收窄操作，使用低 6 位）用于控制右移量，提供缩放。
+
+----
+# 收窄无符号裁剪
+#                                SEW                            2*SEW   SEW
+vnclipu.wv vd, vs2, vs1, vm  # vd[i] = clip(roundoff_unsigned(vs2[i], vs1[i]))
+vnclipu.wx vd, vs2, rs1, vm  # vd[i] = clip(roundoff_unsigned(vs2[i], x[rs1]))
+vnclipu.wi vd, vs2, uimm, vm # vd[i] = clip(roundoff_unsigned(vs2[i], uimm))
+
+# 收窄有符号裁剪
+vnclip.wv vd, vs2, vs1, vm   # vd[i] = clip(roundoff_signed(vs2[i], vs1[i]))
+vnclip.wx vd, vs2, rs1, vm   # vd[i] = clip(roundoff_signed(vs2[i], x[rs1]))
+vnclip.wi vd, vs2, uimm, vm  # vd[i] = clip(roundoff_signed(vs2[i], uimm))
+----
+
+对于 `vnclipu`/`vnclip`，舍入模式在 `vxrm` CSR 中指定。舍入发生在目标的最低有效位周围，并在饱和之前。
+
+对于 `vnclipu`，移位舍入的源值被视为无符号整数，如果结果将溢出被视为无符号整数的目标，则饱和。
+
+NOTE: 没有单个指令可以将有符号值饱和为无符号目标。如果不需要为负数设置 `vxsat` 值，可以使用两个向量指令序列，首先使用 `vmax` 对 0 执行最大值来删除负数，然后使用 `vnclipu` 将生成的无符号值裁剪到目标中。在这两个指令之间需要 `vsetvli` 来更改 SEW。
+
+对于 `vnclip`，移位舍入的源值被视为有符号整数，如果结果将溢出被视为有符号整数的目标，则饱和。
+
+如果任何目标元素饱和，则在 `vxsat` 寄存器中设置 `vxsat` 位。
+
+[[sec-vector-float]]
+=== 向量浮点指令
+
+标准向量浮点指令将元素视为 IEEE-754/2008 兼容值。如果向量浮点操作数的 EEW 不对应于支持的 IEEE 浮点类型，则指令编码保留。
+
+NOTE: 是否支持浮点以及支持哪些元素宽度由特定的向量扩展确定。当前的扩展集包括对 32 位和 64 位浮点值的支持。当添加 16 位和 128 位元素宽度时，它们也将被视为 IEEE-754/2008 兼容值。其他浮点格式可能在未来的扩展中得到支持。
+
+向量浮点指令需要存在与支持的向量浮点元素宽度对应的基本标量浮点扩展。
+
+NOTE: 特别是，支持 16 位半精度浮点值的未来向量扩展也将需要一些标量半精度浮点支持。
+
+如果浮点单元状态字段 `mstatus.FS` 为 `Off`，则任何执行向量浮点指令的尝试都将引发非法指令异常。任何修改任何浮点扩展状态（即浮点 CSR 或 `f` 寄存器）的向量浮点指令必须将 `mstatus.FS` 设置为 `Dirty`。
+
+如果实现了 hypervisor 扩展且 V=1，则 `vsstatus.FS` 字段对向量浮点指令额外生效。如果 `vsstatus.FS` 或 `mstatus.FS` 为 `Off`，则任何执行向量浮点指令的尝试都将引发非法指令异常。任何修改任何浮点扩展状态（即浮点 CSR 或 `f` 寄存器）的向量浮点指令必须将 `mstatus.FS` 和 `vsstatus.FS` 都设置为 `Dirty`。
+
+向量浮点指令在 NaN 方面具有与标量浮点指令相同的行为。
+
+浮点向量标量操作的标量值如 <<sec-arithmetic-encoding>> 中所述来源。
+
+==== 向量浮点异常标志
+
+任何活动浮点元素的向量浮点异常在 `fflags` 寄存器中设置标准 FP 异常标志。非活动元素不设置 FP 异常标志。
+
+==== 向量单宽度浮点加法/减法指令
+
+----
+# 浮点加法
+vfadd.vv vd, vs2, vs1, vm   # Vector-vector
+vfadd.vf vd, vs2, rs1, vm   # vector-scalar
+
+# 浮点减法
+vfsub.vv vd, vs2, vs1, vm   # Vector-vector
+vfsub.vf vd, vs2, rs1, vm   # Vector-scalar vd[i] = vs2[i] - f[rs1]
+vfrsub.vf vd, vs2, rs1, vm  # Scalar-vector vd[i] = f[rs1] - vs2[i]
+----
+
+==== 向量扩宽浮点加法/减法指令
+
+----
+# 扩宽 FP 加法/减法，2*SEW = SEW +/- SEW
+vfwadd.vv vd, vs2, vs1, vm  # vector-vector
+vfwadd.vf vd, vs2, rs1, vm  # vector-scalar
+vfwsub.vv vd, vs2, vs1, vm  # vector-vector
+vfwsub.vf vd, vs2, rs1, vm  # vector-scalar
+
+# 扩宽 FP 加法/减法，2*SEW = 2*SEW +/- SEW
+vfwadd.wv  vd, vs2, vs1, vm  # vector-vector
+vfwadd.wf  vd, vs2, rs1, vm  # vector-scalar
+vfwsub.wv  vd, vs2, vs1, vm  # vector-vector
+vfwsub.wf  vd, vs2, rs1, vm  # vector-scalar
+----
+
+==== 向量单宽度浮点乘法/除法指令
+
+----
+# 浮点乘法
+vfmul.vv vd, vs2, vs1, vm   # Vector-vector
+vfmul.vf vd, vs2, rs1, vm   # vector-scalar
+
+# 浮点除法
+vfdiv.vv vd, vs2, vs1, vm   # Vector-vector
+vfdiv.vf vd, vs2, rs1, vm   # vector-scalar
+
+# 反向浮点除法 vector = scalar / vector
+vfrdiv.vf vd, vs2, rs1, vm  # scalar-vector, vd[i] = f[rs1]/vs2[i]
+----
+
+==== 向量扩宽浮点乘法
+
+----
+# 扩宽浮点乘法
+vfwmul.vv    vd, vs2, vs1, vm # vector-vector
+vfwmul.vf    vd, vs2, rs1, vm # vector-scalar
+----
+
+==== 向量单宽度浮点融合乘法加法指令
+
+提供所有四种融合乘法加法变种，以及两种破坏性形式，覆盖其中一个操作数，要么是被加数，要么是第一个乘数。
+
+----
+# FP 乘法累加，覆盖被加数
+vfmacc.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vfmacc.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vs2[i]) + vd[i]
+
+# FP 负（乘法累加），覆盖被减数
+vfnmacc.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vs2[i]) - vd[i]
+vfnmacc.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vs2[i]) - vd[i]
+
+# FP 乘法减法累加器，覆盖被减数
+vfmsac.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) - vd[i]
+vfmsac.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vs2[i]) - vd[i]
+
+# FP 负（乘法减法累加器），覆盖被减数
+vfnmsac.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vs2[i]) + vd[i]
+vfnmsac.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vs2[i]) + vd[i]
+
+# FP 乘法加法，覆盖乘数
+vfmadd.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vd[i]) + vs2[i]
+vfmadd.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vd[i]) + vs2[i]
+
+# FP 负（乘法加法），覆盖乘数
+vfnmadd.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vd[i]) - vs2[i]
+vfnmadd.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vd[i]) - vs2[i]
+
+# FP 乘法减法，覆盖乘数
+vfmsub.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vd[i]) - vs2[i]
+vfmsub.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vd[i]) - vs2[i]
+
+# FP 负（乘法减法），覆盖乘数
+vfnmsub.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vd[i]) + vs2[i]
+vfnmsub.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vd[i]) + vs2[i]
+----
+
+NOTE: 虽然我们考虑使用标量 FP FMA 编码中的两个未使用舍入模式来提供一些非破坏性 FMA，但这些将通过成为唯一具有三个输入和单独输出的可屏蔽操作来使微架构复杂化。
+
+==== 向量扩宽浮点融合乘法加法指令
+
+扩宽浮点融合乘法加法指令都用结果覆盖宽被加数。乘数输入都是 SEW 宽，而被加数和目标是 2*SEW 位宽。
+
+----
+# FP 扩宽乘法累加，覆盖被加数
+vfwmacc.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) + vd[i]
+vfwmacc.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vs2[i]) + vd[i]
+
+# FP 扩宽负（乘法累加），覆盖被加数
+vfwnmacc.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vs2[i]) - vd[i]
+vfwnmacc.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vs2[i]) - vd[i]
+
+# FP 扩宽乘法减法累加器，覆盖被加数
+vfwmsac.vv vd, vs1, vs2, vm    # vd[i] = +(vs1[i] * vs2[i]) - vd[i]
+vfwmsac.vf vd, rs1, vs2, vm    # vd[i] = +(f[rs1] * vs2[i]) - vd[i]
+
+# FP 扩宽负（乘法减法累加器），覆盖被加数
+vfwnmsac.vv vd, vs1, vs2, vm   # vd[i] = -(vs1[i] * vs2[i]) + vd[i]
+vfwnmsac.vf vd, rs1, vs2, vm   # vd[i] = -(f[rs1] * vs2[i]) + vd[i]
+----
+
+==== 向量浮点平方根指令
+
+这是一个一元向量-向量指令。
+
+----
+# 浮点平方根
+vfsqrt.v vd, vs2, vm   # Vector-vector 平方根
+----
+
+==== 向量浮点倒数平方根估计指令
+
+----
+# 浮点倒数平方根估计到 7 位。
+vfrsqrt7.v vd, vs2, vm
+----
+
+这是一个一元向量-向量指令，返回 1/sqrt(x) 的估计值，精确到 7 位。
+
+NOTE: 早期的草案版本使用汇编器名称 `vfrsqrte7`，但被认为会与元素宽度的 `e`__x__ 记号混淆。早期名称可以在工具链中保留为别名以保持向后兼容性。
+
+下表描述了指令对所有浮点输入类别的行为：
+
+[cols="1,1,1"]
+[%autowidth,float="center",align="center",options="header"]
+|===
+| 输入 | 输出 | 引发的异常
+
+| -{inf} {le} _x_ < -0.0     | 标准 NaN           | NV
+| -0.0                       | -{inf}                  | DZ
+| +0.0                       | +{inf}                  | DZ
+| +0.0 < _x_ < +{inf}        | _1/sqrt(x) 的估计_ |
+| +{inf}                     | +0.0                    |
+| qNaN                       | 标准 NaN           |
+| sNaN                       | 标准 NaN           | NV
+|===
+
+NOTE: 所有正常规和次正规输入产生正常输出。
+
+NOTE: 输出值与动态舍入模式无关。
+
+==== 向量浮点倒数估计指令
+
+----
+# 浮点倒数估计到 7 位。
+vfrec7.v vd, vs2, vm
+----
+
+NOTE: 早期的草案版本使用汇编器名称 `vfrece7`，但被认为会与元素宽度的 `e`__x__ 记号混淆。早期名称可以在工具链中保留为别名以保持向后兼容性。
+
+这是一个一元向量-向量指令，返回 1/x 的估计值，精确到 7 位。
+
+=== 向量掩码指令
+
+提供几个指令来帮助操作保存在向量寄存器中的掩码值。
+
+==== 向量掩码寄存器逻辑指令
+
+向量掩码寄存器逻辑操作在掩码寄存器上操作。掩码寄存器中的每个元素都是单个位，因此这些指令都在单个向量寄存器上操作，无论 `vtype` 中 `vlmul` 字段的设置如何。它们不会改变 `vlmul` 的值。目标向量寄存器可以与任一源向量寄存器相同。
+
+与其他向量指令一样，索引小于 `vstart` 的元素保持不变，并且 `vstart` 在执行后重置为零。向量掩码逻辑指令总是无掩码的，因此没有非活动元素，并且带有 `vm=0` 的编码保留。超过 `vl` 的掩码元素（尾部元素）总是使用尾部无关策略更新。
+
+----
+vmand.mm vd, vs2, vs1   # vd.mask[i] =   vs2.mask[i] &&  vs1.mask[i]
+vmnand.mm vd, vs2, vs1  # vd.mask[i] = !(vs2.mask[i] &&  vs1.mask[i])
+vmandn.mm vd, vs2, vs1  # vd.mask[i] =   vs2.mask[i] && !vs1.mask[i]
+vmxor.mm  vd, vs2, vs1  # vd.mask[i] =   vs2.mask[i] ^^  vs1.mask[i]
+vmor.mm  vd, vs2, vs1   # vd.mask[i] =   vs2.mask[i] ||  vs1.mask[i]
+vmnor.mm  vd, vs2, vs1  # vd.mask[i] = !(vs2.mask[i] ||  vs1.mask[i])
+vmorn.mm  vd, vs2, vs1  # vd.mask[i] =   vs2.mask[i] || !vs1.mask[i]
+vmxnor.mm vd, vs2, vs1  # vd.mask[i] = !(vs2.mask[i] ^^  vs1.mask[i])
+----
+
+NOTE: 之前的汇编器助记符 `vmandnot` 和 `vmornot` 已更改为 `vmandn` 和 `vmorn`，以与等效的标量指令保持一致。旧的 `vmandnot` 和 `vmornot` 助记符可以保留为汇编器别名以保持兼容性。
+
+定义了几个汇编器伪指令作为掩码逻辑操作常见用法的简写：
+----
+vmmv.m vd, vs  => vmand.mm vd, vs, vs   # 复制掩码寄存器
+vmclr.m vd     => vmxor.mm vd, vd, vd   # 清除掩码寄存器
+vmset.m vd     => vmxnor.mm vd, vd, vd  # 设置掩码寄存器
+vmnot.m vd, vs => vmnand.mm vd, vs, vs  # 反转位
+----
+
+NOTE: `vmmv.m` 指令以前称为 `vmcpy.m`，但使用新布局，命名为"mv"更一致，因为位被复制而不解释。`vmcpy.m` 汇编器伪指令可以保留以保持兼容性。对于根据 EEW 内部重新排列位的实现，具有相同源和目标的 `vmmv.m` 指令可以用作习语来强制内部重新格式化为掩码向量。
+
+==== 掩码中的向量计数群体 `vcpop.m`
+
+----
+vcpop.m rd, vs2, vm
+----
+
+NOTE: 此指令以前具有汇编器助记符 `vpopc.m`，但被重命名以与标量指令保持一致。保留汇编器指令别名 `vpopc.m` 以保持软件兼容性。
+
+源操作数是单个向量寄存器，如 <<sec-mask-register-layout>> 中所述保存掩码寄存器值。
+
+`vcpop.m` 指令计算向量源掩码寄存器的活动元素中值为 1 的掩码元素数量，并将结果写入标量 `x` 寄存器。
+
+操作可以在掩码下执行，在这种情况下只计算被掩码的元素。
+
+----
+vcpop.m rd, vs2, v0.t # x[rd] = sum_i ( vs2.mask[i] && v0.mask[i] )
+----
+
+即使 `vl`=0，`vcpop.m` 指令也会写入 `x[rd]`（值为 0，因为没有掩码元素处于活动状态）。
+
+`vcpop.m` 上的陷阱总是报告 `vstart` 为 0。如果 `vstart` 非零，`vcpop.m` 指令将引发非法指令异常。
+
+==== `vfirst` 查找首个设置掩码位
+
+----
+vfirst.m rd, vs2, vm
+----
+
+`vfirst` 指令查找源掩码向量中值为 1 的最低编号活动元素，并将该元素的索引写入 GPR。如果没有活动元素的值为 1，则将 -1 写入 GPR。
+
+NOTE: 软件可以假设任何负值（最高位设置）对应于未找到元素，因为在任何实现上向量长度永远不会达到 2^(XLEN-1)^。
+
+即使 `vl`=0，`vfirst.m` 指令也会写入 `x[rd]`（值为 -1，因为没有掩码元素处于活动状态）。
+
+`vfirst` 上的陷阱总是报告 `vstart` 为 0。如果 `vstart` 非零，`vfirst` 指令将引发非法指令异常。
+
+==== `vmsbf.m` 首个位之前设置掩码位
+
+----
+    vmsbf.m vd, vs2, vm
+
+ # 示例
+
+     7 6 5 4 3 2 1 0   元素编号
+
+     1 0 0 1 0 1 0 0   v3 内容
+                       vmsbf.m v2, v3
+
+     0 0 0 0 0 1 1 1   v2 结果
+----
+
+`vmsbf` 获取一个掩码寄存器作为输入，并在输出掩码寄存器中设置第一个设置位（包括位置）之前的所有位。
+
+=== 向量置换指令
+
+提供了一组向量置换指令来移动向量元素。
+
+==== 向量滑动指令
+
+向量滑动指令将源向量寄存器组中的元素向上或向下移动指定的元素位置数。
+
+---- 
+vslideup.vx vd, vs2, rs1, vm        # vd[i+x[rs1]] = vs2[i]
+vslideup.vi vd, vs2, uimm, vm       # vd[i+uimm] = vs2[i]
+vslidedown.vx vd, vs2, rs1, vm      # vd[i] = vs2[i+x[rs1]]
+vslidedown.vi vd, vs2, uimm, vm     # vd[i] = vs2[i+uimm]
+vslide1up.vx  vd, vs2, rs1, vm      # vd[0]=x[rs1], vd[i+1] = vs2[i]
+vslide1down.vx  vd, vs2, rs1, vm    # vd[i] = vs2[i+1], vd[vl-1]=x[rs1]
+vfslide1up.vf vd, vs2, rs1, vm      # vd[0]=f[rs1], vd[i+1] = vs2[i]
+vfslide1down.vf vd, vs2, rs1, vm    # vd[i] = vs2[i+1], vd[vl-1]=f[rs1]
+----
+
+==== 向量寄存器聚集指令
+
+向量寄存器聚集指令从由第二个源向量寄存器组给出的位置的第一个源向量寄存器组中读取元素。
+
+----
+vrgather.vv vd, vs2, vs1, vm        # vd[i] = (vs1[i] >= VLMAX) ? 0 : vs2[vs1[i]]
+vrgather.vx vd, vs2, rs1, vm        # vd[i] = (x[rs1] >= VLMAX) ? 0 : vs2[x[rs1]]
+vrgather.vi vd, vs2, uimm, vm       # vd[i] = (uimm >= VLMAX) ? 0 : vs2[uimm]
+vrgatherei16.vv vd, vs2, vs1, vm    # vd[i] = (vs1[i] >= VLMAX) ? 0 : vs2[vs1[i]]
+----
+
+=== 向量压缩指令
+
+向量压缩指令允许将稀疏布局的活动元素压缩到密集结构中。
+
+----
+vcompress.vm vd, vs2, vs1           # 将 vs2 压缩到 vd，其中 vs1 为掩码
+----
+
+=== 向量整个寄存器移动
+
+提供指令来复制整个向量寄存器的内容，而不考虑 `vl` 设置。
+
+----
+vmv1r.v vd, vs2                     # vd = vs2
+vmv2r.v vd, vs2                     # 复制 2 个寄存器
+vmv4r.v vd, vs2                     # 复制 4 个寄存器  
+vmv8r.v vd, vs2                     # 复制 8 个寄存器
+----
+
+=== 向量归约操作
+
+向量归约操作将向量中的一组活动元素减少为单个值。
+
+==== 向量单宽度整数归约指令
+
+----
+# 整数求和归约
+vredsum.vs vd, vs2, vs1, vm         # vd[0] = sum(vs2[*]) + vs1[0]
+
+# 最小/最大归约
+vredmin.vs vd, vs2, vs1, vm         # vd[0] = min(vs2[*], vs1[0])
+vredmax.vs vd, vs2, vs1, vm         # vd[0] = max(vs2[*], vs1[0])
+vredminu.vs vd, vs2, vs1, vm        # 无符号最小值
+vredmaxu.vs vd, vs2, vs1, vm        # 无符号最大值
+
+# 按位逻辑归约
+vredand.vs vd, vs2, vs1, vm         # vd[0] = and(vs2[*], vs1[0])
+vredor.vs vd, vs2, vs1, vm          # vd[0] = or(vs2[*], vs1[0])  
+vredxor.vs vd, vs2, vs1, vm         # vd[0] = xor(vs2[*], vs1[0])
+----
+
+==== 向量扩宽整数归约指令
+
+----
+# 扩宽归约
+vwredsum.vs vd, vs2, vs1, vm        # 2*SEW = sum(vs2[*]) + vs1[0]
+vwredsumu.vs vd, vs2, vs1, vm       # 无符号扩宽归约
+----
+
+==== 向量浮点归约指令  
+
+----
+# 浮点归约
+vfredsum.vs vd, vs2, vs1, vm        # 无序浮点求和
+vfredosum.vs vd, vs2, vs1, vm       # 有序浮点求和
+vfredmin.vs vd, vs2, vs1, vm        # 浮点最小值
+vfredmax.vs vd, vs2, vs1, vm        # 浮点最大值
+
+# 扩宽浮点归约
+vfwredsum.vs vd, vs2, vs1, vm       # 扩宽浮点求和
+vfwredosum.vs vd, vs2, vs1, vm      # 扩宽有序浮点求和
+----
+
+=== 向量标量移动指令
+
+这些指令在向量和标量寄存器之间移动值。
+
+----
+# 向量到标量
+vmv.x.s rd, vs2                     # x[rd] = vs2[0]
+vfmv.f.s rd, vs2                    # f[rd] = vs2[0]
+
+# 标量到向量
+vmv.s.x vd, rs1                     # vd[0] = x[rs1]
+vfmv.s.f vd, rs1                    # vd[0] = f[rs1]
+----
+
+=== 向量指令的编程模型总结
+
+向量扩展提供了一套完整的指令来支持数据并行计算：
+
+1. **配置指令**: `vsetvl`、`vsetivli`、`vsetvli` 用于设置向量长度和类型
+2. **内存指令**: 单位步长、步长、索引加载/存储
+3. **算术指令**: 整数、定点、浮点操作
+4. **比较指令**: 生成掩码结果的比较操作
+5. **掩码指令**: 掩码逻辑操作和掩码操作
+6. **置换指令**: 滑动、聚集、压缩操作
+7. **归约指令**: 将向量归约为标量值
+
+所有这些指令都支持灵活的数据宽度和长度配置，提供了一个强大而高效的向量处理框架。
+
+=== 元素组
+
+==== 元素组扩展
+
+一些特殊的向量指令操作具有更严格的内部结构的向量操作数，其中操作的基本单位不是单个向量元素，而是相邻向量元素的固定大小组，称为_元素组_。
+
+_元素组大小_（EGS）是一组中的元素数，必须是 2 的幂（POT）。
+
+NOTE: 考虑了对非 POT EGS 的支持，但会导致许多实际复杂性，因此已被放弃。
+
+元素组大小静态编码在指令中，通常作为操作码的一部分隐式编码。
+
+使用 EGS > VLMAX 执行向量指令会引发非法指令异常。
+
+NOTE: 基本 V 向量 ISA 中的向量指令可以视为对于在指令中静态编码的所有操作数都具有元素组大小 1。
+
+==== 设置 `vl`
+
+当操作数是元素组的向量时，`vl` 设置必须对应于元素组大小的整数倍，其他 `vl` 值保留。
+
+==== 确定 EEW
+
+`vtype` SEW 可用于指示或计算元素组指令的一个或多个操作数的有效元素大小（EEW）。
+
+==== 确定 EMUL
+
+`vtype` LMUL 设置可用于指示或计算一个或多个操作数的有效长度乘数（EMUL）。
+
+==== 元素组宽度
+
+_元素组宽度_（EGW）是整个元素组的位数。例如，Zvknha 扩展中的 SHA-256 指令操作 EGW 为 128，EGS=4 和 EEW=32。
+
+=== 标准向量扩展
+
+==== Zve*: 嵌入式处理器的向量扩展
+
+定义了以下五个标准扩展来提供不同程度的向量支持，主要用于嵌入式处理器。这些扩展中的任何一个都可以添加到 XLEN=32 或 XLEN=64 的基础 ISA 中。下表列出了每个扩展的最小 VLEN 和支持的 EEW，以及支持的浮点类型。
+
+.嵌入式向量扩展
+[cols="1,1,2,1,1"]
+[%autowidth,float="center",align="center",options="header"]
+|===
+| 扩展 | 最小 VLEN | 支持的 EEW |  FP32 | FP64
+
+| Zve32x    | 32    | 8, 16, 32     |   N   |  N
+| Zve32f    | 32    | 8, 16, 32     |   Y   |  N
+| Zve64x    | 64    | 8, 16, 32, 64 |   N   |  N
+| Zve64f    | 64    | 8, 16, 32, 64 |   Y   |  N
+| Zve64d    | 64    | 8, 16, 32, 64 |   Y   |  Y
+|===
+
+Zve32f 和 Zve64x 扩展依赖于 Zve32x 扩展。
+Zve64f 扩展依赖于 Zve32f 和 Zve64x 扩展。
+Zve64d 扩展依赖于 Zve64f 扩展。
+
+所有 Zve* 扩展都具有精确陷阱。
+
+NOTE: 目前没有处理不精确陷阱的标准支持，因此标准扩展必须提供精确陷阱。
+
+所有 Zve* 扩展都支持 8、16 和 32 位的 EEW，Zve64* 扩展还支持 64 位的 EEW。
+
+所有 Zve* 扩展都支持向量配置指令。
+
+所有 Zve* 扩展都支持所有向量加载和存储指令，除了当 XLEN=32 时，Zve64* 扩展不支持索引值的 EEW=64。
+
+所有 Zve* 扩展都支持所有向量整数指令，除了在 Zve64* 中，返回乘积高字的 `vmulh` 整数乘法变体（`vmulh.vv`、`vmulh.vx`、`vmulhu.vv`、`vmulhu.vx`、`vmulhsu.vv`、`vmulhsu.vx`）不包括 EEW=64。
+
+NOTE: 对于大型 EEW，产生乘积的高字可能需要大量的额外门电路。
+
+所有 Zve* 扩展都支持所有向量定点算术指令，除了在 Zve64* 中不包括 EEW=64 的 `vsmul.vv` 和 `vsmul.vx`。
+
+NOTE: 与 `vmulh` 一样，`vsmul` 需要大量的额外逻辑，而 64 位定点乘法相对较少。
+
+所有 Zve* 扩展都支持所有向量整数单宽度和扩宽归约操作。
+
+所有 Zve* 扩展都支持所有向量掩码指令。
+
+所有 Zve* 扩展都支持所有向量置换指令，除了 Zve32x 和 Zve64x 不包括带浮点操作数的指令，Zve64f 不包括带 EEW=64 浮点操作数的指令。
+
+Zve32x 扩展依赖于 Zicsr 扩展。
+Zve32f 和 Zve64f 扩展依赖于 F 扩展，并为 EEW=32 的浮点操作数实现所有向量浮点指令。支持 EEW=32 的向量单宽度浮点归约操作。
+
+Zve64d 扩展依赖于 D 扩展，并为 EEW=32 或 EEW=64 的浮点操作数实现所有向量浮点指令（包括扩宽指令和 FP32 与 FP64 之间的转换）。支持 EEW=32 和 EEW=64 的向量单宽度浮点归约，以及从 FP32 到 FP64 的扩宽归约。
+
+==== V: 应用处理器的向量扩展
+
+单字母 V 扩展主要用于应用处理器配置文件。
+
+对于提供 `misa` 并支持 V 的实现，`misa.v` 位被设置。
+
+V 向量扩展具有精确陷阱。
+
+V 向量扩展依赖于 Zvl128b 和 Zve64d 扩展。
+
+NOTE: 选择 128 的值是应用处理器的折衷方案。提供更大的 VLEN 允许在某些情况下为短向量省略条带挖掘代码，但也增加了上下文状态的大小。此外，128 是许多重要算法的自然宽度，包括许多密码算法。
+
+V 扩展要求实现支持所有 EEW（8、16、32、64）和所有向量指令组，除了与浮点类型相关的浮点指令仅在标量浮点扩展存在时才需要支持。
+
+=== 向量长度扩展
+
+下表显示了向量长度（Zvl*）扩展，这些扩展承诺最小的 VLEN 值。如果实现了其中任何一个，VLEN 必须至少是指定的值。
+
+.向量长度扩展
+[cols="1,1"]
+[%autowidth,float="center",align="center",options="header"]
+|===
+| 扩展名 | 最小 VLEN
+
+| Zvl32b    | 32
+| Zvl64b    | 64
+| Zvl128b   | 128
+| Zvl256b   | 256
+| Zvl512b   | 512
+| Zvl1024b  | 1024
+| Zvl2048b  | 2048
+| Zvl4096b  | 4096
+| Zvl8192b  | 8192
+| Zvl16384b | 16384
+| Zvl32768b | 32768
+| Zvl65536b | 65536
+|===
+
+NOTE: 向量长度扩展是可加的；实现一个更大的向量长度扩展也意味着支持所有较小的扩展。例如，Zvl256b 意味着同时也支持 Zvl128b、Zvl64b 和 Zvl32b。
+
+=== 向量指令清单
+
+向量扩展提供了一套完整的指令来支持高效的数据并行计算。所有指令都设计为可在不同 VLEN 实现之间移植，并提供灵活的数据类型支持。
+
+该扩展包括配置指令、内存操作、算术运算、比较操作、掩码操作、置换指令和归约操作等完整的指令类别，为现代向量处理应用提供了强大的基础。
