@@ -136,6 +136,16 @@ include "cos-opt.cat"
 (* 每个位置的 Sc *)
 acyclic co|rf|fr|po-loc as Coherence
 
+(* 计算一致性关系 *)
+include "cos-opt.cat"
+
+(**********)
+(* 公理 *)
+(**********)
+
+(* 每个位置的 Sc *)
+acyclic co|rf|fr|po-loc as Coherence
+
 (* 主模型公理 *)
 acyclic co|rfe|fr|ppo as Model
 

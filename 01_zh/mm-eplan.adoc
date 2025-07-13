@@ -1075,3 +1075,494 @@ a! image::graphviz/litmus_subsumption.png[]
 |===
 
 在 <<rsw1>>-<<rsw3>> 中所示的混合大小 RSW 变体系列中，操作规范和公理规范之间存在已知差异。为了解决这个问题，我们可以选择添加类似以下新的 PPO 规则：内存操作 _a_ 在保留程序顺序中先于内存操作 _b_（因此也在全局内存顺序中），如果 _a_ 在程序顺序中先于 _b_，_a_ 和 _b_ 都访问常规主内存（而不是 I/O 区域），_a_ 是加载，_b_ 是存储，在 _a_ 和 _b_ 之间有一个加载 _m_，有一个字节 _x_，_a_ 和 _m_ 都读取它，在 _a_ 和 _m_ 之间没有写入 _x_ 的存储，并且 _m_ 在 PPO 中先于 _b_。换句话说，在 herd 语法中，我们可以选择将 `(po-loc & rsw);ppo;[W]` 添加到 PPO。许多实现将自然地强制执行此排序。因此，即使此规则不是官方的，我们仍建议实现者强制执行它，以确保与未来可能将此规则添加到 RVWMO 的前向兼容性。
+
+规则 <<overlapping-ordering, 11>>。
+
+[[litmus:addrdatarfi_no]]
+.由于从 (d) 到 (e) 的地址依赖，(d) 也先于 (f)（结果被禁止）
+[float="center",align="center",cols=".^1a,.^1a",frame="none",grid="none",options="noheader"]
+|===
+|
+[%autowidth,cols="^,<,^,<"float="center",align="center",options="header"]
+!===
+2+!Hart 0 2+^!Hart 1
+2+! 2+^!li t1, 1
+!(a) !lw a0,0(s0) !(d) !lw a1, 0(s1)
+!(b) !fence rw,rw !(e) !lw a2, 0(a1)
+!(c) !sw s2,0(s1) !(f) !sw t1, 0(s0)
+4+!结果：`a0=1`，`a1=t`
+!===
+|
+!===
+//a! graphviz::images/graphviz/litmus_addrpo.txt[]
+a! image:graphviz/litmus_addrpo.png[]
+!===
+|===
+
+考虑 <<litmus:addrdatarfi_no>> 中的 (f) 无法执行，直到 (e) 的地址被解析，因为可能会发现地址匹配；即 `a1=s0`。因此，(f) 无法在 (d) 执行并确认地址是否确实重叠之前发送到内存。
+
+=== 超越主内存
+
+RVWMO 目前不尝试正式描述 FENCE.I、SFENCE.VMA、I/O 栅栏和 PMA 的行为。所有这些行为将由未来的形式化描述。与此同时，FENCE.I 的行为在 <<zifencei>> 中描述，SFENCE.VMA 的行为在 RISC-V 指令集特权架构手册中描述，I/O 栅栏的行为和 PMA 的影响在下面描述。
+
+==== 一致性和可缓存性
+
+RISC-V 特权 ISA 定义了物理内存属性（PMA），其中指定了地址空间的哪些部分是一致的和/或可缓存的等等。有关完整详细信息，请参阅 RISC-V 特权 ISA 规范。在这里，我们只是讨论每个 PMA 中的各种详细信息如何与内存模型相关：
+
+* 主内存与 I/O，以及 I/O 内存排序 PMA：定义的内存模型适用于主内存区域。I/O 排序在下面讨论。
+* 支持的访问类型和原子性 PMA：内存模型简单地应用在每个区域支持的任何原语之上。
+* 可缓存性 PMA：可缓存性 PMA 通常不影响内存模型。不可缓存区域的行为可能比可缓存区域更严格，但无论如何，允许的行为集不会改变。但是，某些特定于平台和/或特定于设备的可缓存性设置可能有所不同。
+* 一致性 PMA：在 PMA 中标记为非一致的内存区域的内存一致性模型目前是特定于平台和/或特定于设备的：加载值公理、原子性公理和进度公理都可能在非一致内存中被违反。但是请注意，一致内存不需要硬件缓存一致性协议。RISC-V 特权 ISA 规范建议不鼓励主内存的硬件不一致区域，但内存模型与硬件一致性、软件一致性、由于只读内存而隐式一致性、由于只有一个代理具有访问权限而隐式一致性或其他方式兼容。
+* 幂等性 PMA：幂等性 PMA 用于指定加载和/或存储可能产生副作用的内存区域，这反过来被微架构用来确定例如预取是否合法。这种区别不影响内存模型。
+
+==== I/O 排序
+
+对于 I/O，加载值公理和原子性公理一般不适用，因为读取和写入都可能有特定于设备的副作用，并且可能返回除最近存储到同一地址的值以外的值。尽管如此，以下保留的程序顺序规则仍然通常适用于对 I/O 内存的访问：如果内存访问 _a_ 在程序顺序中先于内存访问 _b_ 并且以下一个或多个条件成立，则内存访问 _a_ 在全局内存顺序中先于内存访问 _b_：
+
+. _a_ 在保留程序顺序中先于 _b_，如 <<memorymodel>> 中定义，但获取和释放排序注释仅从一个内存操作适用于另一个内存操作以及从一个 I/O 操作适用于另一个 I/O 操作，但不从内存操作适用于 I/O，反之亦然
+. _a_ 和 _b_ 是对 I/O 区域中重叠地址的访问
+. _a_ 和 _b_ 是对同一强排序 I/O 区域的访问
+. _a_ 和 _b_ 是对 I/O 区域的访问，并且由 _a_ 或 _b_ 访问的 I/O 区域关联的通道是通道 1
+. _a_ 和 _b_ 是对与同一通道关联的 I/O 区域的访问（除了通道 0）
+
+请注意，FENCE 指令在其前驱和后继集合中区分主内存操作和 I/O 操作。为了在 I/O 操作和主内存操作之间强制排序，代码必须使用带有 PI、PO、SI 和/或 SO 以及 PR、PW、SR 和/或 SW 的 FENCE。例如，为了在写入主内存和向设备寄存器写入 I/O 之间强制排序，需要 FENCE W,O 或更强的栅栏。
+[[wo]]
+.排序内存和 I/O 访问
+[.text-center,source%linenums,asm]
+----
+sd t0, 0(a0)
+fence w,o
+sd a0, 0(a1)
+----
+
+当实际使用栅栏时，实现必须假设设备可能在接收到 MMIO 信号后立即尝试访问内存，并且从该设备到内存的后续内存访问必须观察到在该 MMIO 操作之前排序的所有访问的效果。换句话说，在 <<wo>> 中，假设 `0(a0)` 在主内存中，`0(a1)` 是 I/O 内存中设备寄存器的地址。如果设备在接收到 MMIO 写入时访问 `0(a0)`，那么根据 RVWMO 内存模型的规则，该加载必须在概念上出现在第一次存储到 `0(a0)` 之后。在某些实现中，确保这一点的唯一方法是要求第一次存储在发出 MMIO 写入之前实际完成。其他实现可能找到更积极的方法，而另一些实现对于 I/O 和主内存访问可能根本不需要做任何不同的事情。尽管如此，RVWMO 内存模型不区分这些选项；它只是提供一个与实现无关的机制来指定必须强制执行的排序。
+
+许多架构包括"排序"和"完成"栅栏的独立概念，特别是与 I/O 相关（与常规主内存相对）。排序栅栏只是确保内存操作保持顺序，而完成栅栏确保前驱访问在任何后继访问变得可见之前全部完成。RISC-V 没有明确区分排序和完成栅栏。相反，这种区别只是从 FENCE 位的不同用法中推断出来的。
+
+对于符合 RISC-V Unix 平台规范的实现，I/O 设备和 DMA 操作需要通过强排序 I/O 通道一致地访问内存。因此，对被外部设备并发访问的常规主内存区域的访问也可以使用标准同步机制。不符合 Unix 平台规范和/或设备不一致访问内存的实现将需要使用机制（目前是特定于平台或特定于设备的）来强制一致性。
+
+地址空间中的 I/O 区域应被视为这些区域的 PMA 中的非可缓存区域。如果任何代理都不缓存此类区域，则 PMA 可以将其视为一致的。
+
+本节中的排序保证可能不适用于 RISC-V 核心和设备之间的特定于平台的边界之外。特别是，通过外部总线（例如 PCIe）发送的 I/O 访问在到达其最终目的地之前可能被重新排序。在这种情况下，必须根据这些外部设备和总线的特定于平台的规则强制排序。
+
+[[memory_porting]]
+=== 代码移植和映射指南
+
+[[tsomappings]]
+.从 TSO 操作到 RISC-V 操作的映射
+[%autowidth,float="center", align="center",cols="<,<",options="header",separator=!]
+|===
+!x86/TSO 操作 !RVWMO 映射
+!加载 ! `l{b|h|w|d}; fence r,rw`
+!存储 !`fence rw,w; s{b|h|w|d}`
+!原子 RMW !`amo<op>.{w|d}.aqrl OR` +
+`loop:lr.{w|d}.aq; <op>; sc.{w|d}.aqrl; bnez loop`
+!栅栏 !`fence rw,rw`
+|===
+
+<<tsomappings>> 提供了从 TSO 内存操作到 RISC-V 内存指令的映射。普通的 x86 加载和存储本质上都是获取-RCpc 和释放-RCpc 操作：TSO 默认强制执行所有加载-加载、加载-存储和存储-存储排序。因此，在 RVWMO 下，所有 TSO 加载必须映射到加载后跟 FENCE R,RW，所有 TSO 存储必须映射到 FENCE RW,W 后跟存储。TSO 原子读-修改-写和使用 LOCK 前缀的 x86 指令是完全排序的，可以通过设置 _aq_ 和 _rl_ 的 AMO，或通过设置 _aq_ 的 LR、相关的算术操作、设置 _aq_ 和 _rl_ 的 SC 以及检查成功条件的条件分支来实现。在后一种情况下，LR 上的 _rl_ 注释结果（出于非显而易见的原因）是冗余的，可以省略。
+
+<<tsomappings>> 的替代方案也是可能的。TSO 存储可以映射到设置 _rl_ 的 AMOSWAP。但是，由于 RVWMO PPO 规则 <<overlapping-ordering, 3>> 禁止将值从 AMO 转发到后续加载，因此使用 AMOSWAP 进行存储可能会对性能产生负面影响。TSO 加载可以使用设置 _aq_ 的 LR 映射：所有这样的 LR 指令都将是未配对的，但这个事实本身并不排除使用 LR 进行加载。但是，这种映射也可能对性能产生负面影响，如果它对保留机制施加的压力超过了最初的预期。
+
+[[powermappings]]
+.从 Power 操作到 RISC-V 操作的映射
+[%autowidth,float="center",align="center",cols="<,<",options="header",separator=!]
+|===
+!Power 操作 !RVWMO 映射
+!加载 !`l{b|h|w|d}`
+!加载-保留 !`lr.{w|d}`
+!存储 !`s{b|h|w|d}`
+!存储-条件 !`sc.{w|d}`
+!`lwsync` !`fence.tso`
+!`sync` !`fence rw,rw`
+!`isync` !`fence.i; fence r,r`
+|===
+
+<<powermappings>> 提供了从 Power 内存操作到 RISC-V 内存指令的映射。Power ISYNC 在 RISC-V 上映射到 FENCE.I 后跟 FENCE R,R；需要后一个栅栏，因为 ISYNC 用于定义 RVWMO 中不存在的"控制+控制栅栏"依赖关系。
+
+[[armmappings]]
+.从 ARM 操作到 RISC-V 操作的映射
+[%autowidth,float="center",align="center",cols="<,<",options="header",separator=!]
+|===
+!ARM 操作 !RVWMO 映射
+!加载 !`l{b|h|w|d}`
+!加载-获取 !`fence rw, rw; l{b|h|w|d}; fence r,rw`
+!加载-独占 !`lr.{w|d}`
+!加载-获取-独占 !`lr.{w|d}.aqrl`
+!存储 !`s{b|h|w|d}`
+!存储-释放 !`fence rw,w; s{b|h|w|d}`
+!存储-独占 !`sc.{w|d}`
+!存储-释放-独占 !`sc.{w|d}.rl`
+!`dmb` !`fence rw,rw`
+!`dmb.ld` !`fence r,rw`
+!`dmb.st` !`fence w,w`
+!`isb` !`fence.i; fence r,r`
+|===
+
+<<armmappings>> 提供了从 ARM 内存操作到 RISC-V 内存指令的映射。由于 RISC-V 目前没有带有 _aq_ 或 _rl_ 注释的普通加载和存储操作码，ARM 加载-获取和存储-释放操作应使用栅栏进行映射。此外，为了强制存储-释放到加载-获取的排序，存储-释放和加载-获取之间必须有 FENCE RW,RW；<<armmappings>> 通过始终在每个获取操作前放置栅栏来强制执行这一点。ARM 加载-独占和存储-独占指令同样可以映射到它们的 RISC-V LR 和 SC 等价物，但是不是在设置 _aq_ 的 LR 前放置 FENCE RW,RW，我们只需同时设置 _rl_。ARM ISB 在 RISC-V 上映射到 FENCE.I 后跟 FENCE R,R，类似于 Power 的 ISYNC 映射。
+
+[[linuxmappings]]
+.从 Linux 内存原语到 RISC-V 原语的映射
+[%autowidth,float="center",align="center",cols="<,<",options="header",separator=!]
+|===
+!Linux 操作 !RVWMO 映射
+
+!`smp_mb()` !`fence rw,rw`
+
+!`smp_rmb()` !`fence r,r`
+
+!`smp_wmb()` !`fence w,w`
+
+!`dma_rmb()` !`fence r,r`
+
+!`dma_wmb()` !`fence w,w`
+
+!`mb()` !`fence iorw,iorw`
+
+!`rmb()` !`fence ri,ri`
+
+!`wmb()` !`fence wo,wo`
+
+!`smp_load_acquire()` !`l{b|h|w|d}; fence r,rw`
+
+!`smp_store_release()` !`fence.tso; s{b|h|w|d}`
+
+!Linux 构造 !RVWMO AMO 映射
+
+!`atomic &#60;op&#62; relaxed` !`amo &#60;op&#62;.{w|d}`
+
+!`atomic &#60;op&#62; acquire` !`amo &#60;op&#62;.{w|d}.aq`
+
+!`atomic &#60;op&#62; release` !`amo &#60;op&#62;.{w|d}.rl`
+
+!`atomic &#60;op&#62;` !`amo &#60;op&#62;.{w|d}.aqrl`
+
+!Linux 构造 !RVWMO LR/SC 映射
+
+!`atomic &#60;op&#62; relaxed` !`loop:lr.{w|d}; &#60;op&#62;; sc.{w|d}; bnez loop`
+
+!`atomic &#60;op&#62; acquire` !`loop:lr.{w|d}.aq; &#60;op&#62;; sc.{w|d}; bnez loop`
+
+!`atomic &#60;op&#62; release` !`loop:lr.{w|d}; &#60;op&#62;; sc.{w|d}.aqrl^&#42;; bnez loop OR`
+
+! !`fence.tso; loop:lr.{w|d}; &#60;op &#62;; sc.{w|d}^&#42;; bnez loop`
+
+!`atomic &#60;op&#62;` !`loop:lr.{w|d}.aq;` `&#60;op&#62;; sc.{w|d}.aqrl; bnez loop`
+
+|===
+
+关于 <<linuxmappings>>，其他构造（如自旋锁）应相应遵循。具有非一致 DMA 的平台或设备可能需要额外的同步（如缓存刷新或无效机制）；目前任何此类额外同步都将是特定于设备的。
+
+<<linuxmappings>> 提供了 Linux 内存排序宏到 RISC-V 内存指令的映射。Linux 栅栏 `dma_rmb()` 和 `dma_wmb()` 分别映射到 FENCE R,R 和 FENCE W,W，因为 RISC-V Unix 平台需要一致的 DMA，但在具有非一致 DMA 的平台上将分别映射到 FENCE RI,RI 和 FENCE WO,WO。具有非一致 DMA 的平台还可能需要一种可以刷新和/或无效缓存行的机制。此类机制将是特定于设备的和/或在 ISA 的未来扩展中标准化。
+
+释放操作的 Linux 映射可能看起来比必要的更强，但这些映射是必需的，以涵盖 Linux 需要比更直观的映射提供的更强排序的某些情况。特别是，在撰写本文时，Linux 正在积极辩论是否要求在同一 hart 中的一个关键段中的访问与由同一同步对象保护的后续关键段中的访问之间进行加载-加载、加载-存储和存储-存储排序。并非所有 FENCE RW,W/FENCE R,RW 映射与 _aq_/_rl_ 映射的组合都能提供此类排序。解决此问题的方法有几种，包括：
+
+. 始终使用 FENCE RW,W/FENCE R,RW，永不使用 _aq_/_rl_。这足够了，但不合需要，因为它违背了 _aq_/_rl_ 修饰符的目的。
+. 始终使用 _aq_/_rl_，永不使用 FENCE RW,W/FENCE R,RW。由于缺少带有 _aq_ 和 _rl_ 修饰符的加载和存储操作码，这目前不起作用。
+. 加强释放操作的映射，使它们在任一类型的获取映射存在的情况下强制执行足够的排序。这是目前推荐的解决方案，也是 <<linuxmappings>> 中显示的解决方案。
+
+RVWMO 映射：(a) lw a0, 0(s0) (b) fence.tso // vs. fence rw,w (c) sd
+x0,0(s1) ... loop: (d) amoswap.d.aq a1,t1,0(s1) bnez a1,loop (e) lw
+a2,0(s2)
+
+例如，Linux 社区目前正在辩论的关键段排序规则将要求 (a) 在 <<lkmm_ll>> 中的 (e) 之前排序。如果确实需要这样做，那么 (b) 映射为 FENCE RW,W 是不够的。也就是说，这些映射可能会随着 Linux 内核内存模型的发展而改变。
+
+[[lkmm_ll]]
+.Linux 中关键段之间的排序
+[source%linenums,asm]
+----
+Linux 代码：
+(a) int r0 = *x;
+       (bc) spin_unlock(y, 0);
+....
+....
+(d) spin_lock(y);
+(e) int r1 = *z;
+
+RVWMO 映射：
+(a) lw a0, 0(s0)
+(b) fence.tso // vs. fence rw,w
+(c) sd x0,0(s1)
+....
+loop:
+(d) lr.d.aq a1,(s1)
+bnez a1,loop
+sc.d a1,t1,(s1)
+bnez a1,loop
+(e) lw a2,0(s2)
+----
+
+<<c11mappings>> 提供了 C11/C++11 原子操作到 RISC-V 内存指令的映射。如果引入带有 _aq_ 和 _rl_ 修饰符的加载和存储操作码，那么 <<c11mappings_hypothetical>> 中的映射就足够了。但是请注意，只有当 `atomic_<op>(memory_order_seq_cst)` 使用同时设置 _aq_ 和 _rl_ 的 LR 映射时，这两种映射才能正确互操作。更重要的是，<<c11mappings>> 顺序一致存储后跟 <<c11mappings_hypothetical>> 顺序一致加载可能会被重新排序，除非通过添加第二个栅栏或将存储映射到 `amoswap.rl` 来加强 <<c11mappings>> 存储映射。
+
+[[c11mappings]]
+.从 C/C++ 原语到 RISC-V 原语的映射
+[%autowidth,float="center",align="center",cols="<,<",options="header",separator=!]
+|===
+
+!C/C++ 构造 ! RVWMO 映射
+
+!非原子加载 ! `l{b|h|w|d}`
+\!`atomic_load(memory_order_relaxed)` \!`l{b|h|w|d}`
+
+\!`atomic_load(memory_order_acquire)` \!`l{b|h|w|d}; fence r,rw`
+
+\!`atomic_load(memory_order_seq_cst)` \!`fence rw,rw; l{b|h|w|d}; fence r,rw`
+
+\!非原子存储 \!`s{b|h|w|d}`
+
+\!`atomic_store(memory_order_relaxed)` \!`s{b|h|w|d}`
+
+\!`atomic_store(memory_order_release)` \!`fence rw,w; s{b|h|w|d}`
+
+\!`atomic_store(memory_order_seq_cst)` \!`fence rw,w; s{b|h|w|d}`
+
+\!`atomic_thread_fence(memory_order_acquire)` \!`fence r,rw`
+
+\!`atomic_thread_fence(memory_order_release)` \!`fence rw,w`
+
+\!`atomic_thread_fence(memory_order_acq_rel)` \!`fence.tso`
+
+\!`atomic_thread_fence(memory_order_seq_cst)` \!`fence rw,rw`
+
+\!C/C++ 构造 \!RVWMO AMO 映射
+
+\!`atomic_<op>(memory_order_relaxed)` \!`amo<op>.{w|d}`
+
+\!`atomic_<op>(memory_order_acquire)` \!`amo<op>.{w|d}.aq`
+
+\!`atomic_<op>(memory_order_release)` \!`amo<op>.{w|d}.rl`
+
+\!`atomic_<op>(memory_order_acq_rel)` \!`amo<op>.{w|d}.aqrl`
+
+\!`atomic_<op>(memory_order_seq_cst)` \!`amo<op>.{w|d}.aqrl`
+
+\!C/C++ 构造 \!RVWMO LR/SC 映射
+
+\!`atomic_<op>(memory_order_relaxed)` \!`loop:lr.{w|d}; <op>; sc.{w|d};`
+
+\! \!`bnez loop`
+
+\!`atomic_<op>(memory_order_acquire)` \!`loop:lr.{w|d}.aq; <op>; sc.{w|d};`
+
+\! \!`bnez loop`
+
+\!`atomic_<op>(memory_order_release)` \!`loop:lr.{w|d}; <op>; sc.{w|d}.rl;`
+
+\! \!`bnez loop`
+
+\!`atomic_<op>(memory_order_acq_rel)` \!`loop:lr.{w|d}.aq; <op>; sc.{w|d}.rl;`
+
+\! \!`bnez loop`
+
+\!`atomic_<op>(memory_order_seq_cst)` \!`loop:lr.{w|d}.aqrl; <op>;`
+
+\! \!`sc.{w|d}.rl; bnez loop`
+
+|===
+
+[[c11mappings_hypothetical]]
+.如果引入本机加载-获取和存储-释放操作码，从 C/C++ 原语到 RISC-V 原语的假设映射
+[%autowidth,float="center",align="center",cols="<,<",options="header",separator=\!]
+|===
+\!C/C++ 构造 \!RVWMO 映射
+
+\!非原子加载 \!`l{b|h|w|d}`
+
+\!`atomic_load(memory_order_relaxed)` \!`l{b|h|w|d}`
+
+\!`atomic_load(memory_order_acquire)` \!`l{b|h|w|d}.aq`
+
+\!`atomic_load(memory_order_seq_cst)` \!`l{b|h|w|d}.aq`
+
+\!非原子存储 \!`s{b|h|w|d}`
+
+\!`atomic_store(memory_order_relaxed)` \!`s{b|h|w|d}`
+
+\!`atomic_store(memory_order_release)` \!`s{b|h|w|d}.rl`
+
+\!`atomic_store(memory_order_seq_cst)` \!`s{b|h|w|d}.rl`
+
+\!`atomic_thread_fence(memory_order_acquire)` \!`fence r,rw`
+
+\!`atomic_thread_fence(memory_order_release)` \!`fence rw,w`
+
+\!`atomic_thread_fence(memory_order_acq_rel)` \!`fence.tso`
+
+\!`atomic_thread_fence(memory_order_seq_cst)` \!`fence rw,rw`
+
+\!C/C++ 构造 \!RVWMO AMO 映射
+
+\!`atomic_<op>(memory_order_relaxed)` \!`amo<op>.{w|d}`
+
+\!`atomic_<op>(memory_order_acquire)` \!`amo<op>.{w|d}.aq`
+
+\!`atomic_<op>(memory_order_release)` \!`amo<op>.{w|d}.rl`
+
+\!`atomic_<op>(memory_order_acq_rel)` \!`amo<op>.{w|d}.aqrl`
+
+\!`atomic_<op>(memory_order_seq_cst)` \!`amo<op>.{w|d}.aqrl`
+
+\!C/C++ 构造 \!RVWMO LR/SC 映射
+
+\!`atomic_<op>(memory_order_relaxed)` \!`lr.{w|d}; <op>; sc.{w|d}`
+
+\!`atomic_<op>(memory_order_acquire)` \!`lr.{w|d}.aq; <op>; sc.{w|d}`
+
+\!`atomic_<op>(memory_order_release)` \!`lr.{w|d}; <op>; sc.{w|d}.rl`
+
+\!`atomic_<op>(memory_order_acq_rel)` \!`lr.{w|d}.aq; <op>; sc.{w|d}.rl`
+
+\!`atomic_<op>(memory_order_seq_cst)` \!`lr.{w|d}.aq* <op>; sc.{w|d}.rl`
+
+2+\!`*` 必须是 `lr.{w|d}.aqrl` 才能与根据 <<c11mappings>> 映射的代码互操作
+|===
+
+任何 AMO 都可以由 LR/SC 对模拟，但必须注意确保源自 LR 的任何 PPO 排序也要源自 SC，并且终止于 SC 的任何 PPO 排序也要终止于 LR。例如，LR 还必须尊重 AMO 具有的任何数据依赖关系，因为加载操作在其他情况下没有任何数据依赖关系概念。同样，同一 hart 中其他地方的 FENCE R,R 的效果也必须应用于 SC，否则不会尊重该栅栏。仿真器可以通过简单地将 AMO 映射到 `lr.aq; <op>; sc.aqrl` 来实现这种效果，匹配其他地方用于完全排序原子的映射。
+
+这些 C11/C++11 映射要求平台为所有内存提供以下物理内存属性（如 RISC-V 特权 ISA 中定义）：
+
+* 主内存
+* 一致
+* AMOArithmetic
+* RsrvEventual
+
+具有不同属性的平台可能需要不同的映射，或需要特定于平台的 SW（例如内存映射 I/O）。
+
+=== 实现指南
+
+RVWMO 和 RVTSO 内存模型绝不排除微架构采用复杂的推测技术或其他形式的优化来提供更高性能。这些模型也不对使用任何一种特定的缓存层次结构施加任何要求，甚至不要求使用缓存一致性协议。相反，这些模型只指定可以向软件公开的行为。微架构可以自由使用任何流水线设计、任何一致或非一致缓存层次结构、任何片上互连等，只要设计只允许满足内存模型规则的执行。也就是说，为了帮助人们理解内存模型的实际实现，在本节中我们提供了一些关于架构师和程序员应如何解释模型规则的指南。
+
+RVWMO 和 RVTSO 都是多拷贝原子的（或 _其他多拷贝原子_）：对除最初发出它的 hart 之外的 hart 可见的任何存储值也必须在概念上对系统中的所有其他 hart 可见。换句话说，hart 可以在其自己的先前存储对所有 hart 全局可见之前从其转发，但不允许早期的 hart 间转发。多拷贝原子性可以通过多种方式强制执行。它可能由于缓存和存储缓冲区的物理设计而固有地保持，它可能通过单写者/多读者缓存一致性协议强制执行，或者它可能由于某些其他机制而保持。
+
+虽然多拷贝原子性确实对微架构施加了一些限制，但它是防止内存模型变得极其复杂的关键属性之一。例如，hart 可能不会合法地从邻居 hart 的私有存储缓冲区转发值（当然，除非以不使新的非法行为在架构上变得可见的方式进行）。缓存一致性协议也不能将值从一个 hart 转发到另一个 hart，直到一致性协议使其他缓存中的所有较旧副本无效。当然，微架构可能（高性能实现可能会）通过推测或其他优化在底层违反这些规则，只要任何不符合规范的行为不会暴露给程序员。
+
+作为解释 RVWMO 中 PPO 规则的粗略指南，我们从软件角度期望以下内容：
+
+* 程序员将定期和积极地使用 PPO 规则 <<overlapping-ordering, 1>> 和 <<overlapping-ordering, 4-8>>。
+* 专家程序员将使用 PPO 规则 <<overlapping-ordering, 9-11>> 来加速重要数据结构的关键路径。
+* 即使是专家程序员也很少直接使用 PPO 规则 <<overlapping-ordering, 2-3>> 和 <<overlapping-ordering, 12-13>>。这些包含在内是为了促进常见的微架构优化（规则 <<overlapping-ordering, 2>>）和 <<operational>> 中描述的操作形式建模方法（规则 <<overlapping-ordering, 3>> 和 <<overlapping-ordering, 12-13>>）。它们还促进了从具有类似规则的其他架构移植代码的过程。
+
+我们还从硬件角度期望以下内容：
+
+* PPO 规则 <<overlapping-ordering, 1>> 和 <<overlapping-ordering, 3-6>> 反映了架构师应该很好理解的规则，不应对他们造成太多惊讶。
+* PPO 规则 <<overlapping-ordering, 2>> 反映了一种自然且常见的硬件优化，但非常微妙，因此值得仔细检查。
+* PPO 规则 <<overlapping-ordering, 7>> 对架构师来说可能不是立即显而易见的，但它是标准内存模型要求
+* 加载值公理、原子性公理和 PPO 规则 <<overlapping-ordering, 8-13>> 反映了大多数硬件实现将自然强制执行的规则，除非它们包含极端优化。当然，实现应该确保仍然仔细检查这些规则。硬件还必须确保语法依赖关系不会被"优化掉"。
+
+架构可以自由地根据他们选择的保守程度实现任何内存模型规则。例如，硬件实现可以选择执行以下任何或所有操作：
+
+* 将所有栅栏解释为 FENCE RW,RW（如果涉及 I/O，则为 FENCE IORW,IORW），无论实际设置的位如何
+* 将所有具有 PW 和 SR 的栅栏实现为 FENCE RW,RW（如果涉及 I/O，则为 FENCE IORW,IORW），因为带有 SR 的 PW 无论如何都是四个可能的主内存排序组件中最昂贵的
+* 如 <<memory_porting>> 中描述的那样模拟 _aq_ 和 _rl_
+* 强制执行所有相同地址的加载-加载排序，即使存在诸如 `fri-rfi` 和 `RSW` 之类的模式
+* 禁止将值从存储缓冲区中的存储转发到同一地址的后续 AMO 或 LR
+* 禁止将值从存储缓冲区中的 AMO 或 SC 转发到同一地址的后续加载
+* 在所有内存访问上实现 TSO，并忽略任何不包括 PW 和 SR 排序的主内存栅栏（例如，Ztso 实现将这样做）
+* 实现所有原子为 RCsc 甚至完全排序，无论注释如何
+
+实现 RVTSO 的架构可以安全地执行以下操作：
+
+* 忽略所有没有 PW 和 SR 的栅栏（除非栅栏也排序 I/O）
+* 忽略除规则 <<overlapping-ordering, 4>> 到 <<overlapping-ordering, 7>> 之外的所有 PPO 规则，因为其余规则在 RVTSO 假设下与其他 PPO 规则冗余
+
+其他一般说明：
+
+* 静默存储（即写入已存在于内存位置的相同值的存储）从内存模型的角度表现得像任何其他存储。同样，实际上不改变内存中值的 AMO（例如，_rs2_ 中的值小于内存中当前值的 AMOMAX）在语义上仍被视为存储操作。尝试实现静默存储的微架构必须小心确保仍然遵守内存模型，特别是在诸如 RSW <<mm-overlap>> 之类的情况下，这往往与静默存储不兼容。
+* 写入可以被合并（即对同一地址的两个连续写入可以被合并）或被包含（即对同一地址的两个背靠背写入中的较早者可以被省略），只要结果行为不违反内存模型语义。
+
+写入包含的问题可以从以下示例中理解：
+
+.写入包含 litmus 测试，允许的执行
+[float="center",align="center",cols=".^1a,.^1a",frame="none",grid="none",options="noheader"]
+|===
+|
+[%autowidth,float="center",align="center",cols="^,<,^,<",options="header",]
+\!===
+2+\!Hart 0 2+^\!Hart 1
+2+\!li t1, 3 2+^\!li t3, 2
+\! \!li t2, 1 \! \!
+\!(a) \!sw t1,0(s0) \!(d) \!lw a0,0(s1)
+\!(b) \!fence w, w \!(e) \!sw a0,0(s0)
+\!(c) \!sw t2,0(s1) \!(f) \!sw t3,0(s0)
+\!===
+|
+\!===
+//a\! graphviz::images/graphviz/litmus_subsumption.txt[]
+a\! image::graphviz/litmus_subsumption.png[]
+\!===
+|===
+
+如所写，如果加载 (d) 读取值 _1_，则 (a) 必须在全局内存顺序中先于 (f)：
+
+* (a) 由于规则 4 在全局内存顺序中先于 (c)
+* (c) 由于加载值公理在全局内存顺序中先于 (d)
+* (d) 由于规则 10 在全局内存顺序中先于 (e)
+* (e) 由于规则 1 在全局内存顺序中先于 (f)
+
+换句话说，地址在 `s0` 中的内存位置的最终值必须是 _2_（存储 (f) 写入的值），不能是 _3_（存储 (a) 写入的值）。
+
+非常激进的微架构可能错误地决定丢弃 (e)，因为 (f) 取代了它，这反过来可能导致微架构破坏现在消除的 (d) 和 (f) 之间的依赖关系（因此也破坏 (a) 和 (f) 之间的依赖关系）。这将违反内存模型规则，因此是被禁止的。在其他情况下，写入包含可能是合法的，例如如果 (d) 和 (e) 之间没有数据依赖关系。
+
+==== 可能的未来扩展
+
+我们期望以下任何或所有可能的未来扩展都与 RVWMO 内存模型兼容：
+
+* "V" 向量 ISA 扩展
+* "J" JIT 扩展
+* 设置 _aq_ 和 _rl_ 的加载和存储操作码的本机编码
+* 限制于特定地址的栅栏
+* 缓存写回/刷新/无效/等指令
+
+[[discrepancies]]
+=== 已知问题
+
+[[mixedrsw]]
+==== 混合大小 RSW
+
+[[rsw1]]
+.混合大小差异（公理模型允许，操作模型禁止）
+[%autowidth,float="center",align="center",cols="^,<,^,<",options="header",]
+|===
+2+|Hart 0 2+^|Hart 1
+2+|li t1, 1 2+^|li t1, 1
+|(a) |lw a0,0(s0) |(d) |lw a1,0(s1)
+|(b) |fence rw,rw |(e) |amoswap.w.rl a2,t1,0(s2)
+|(c) |sw t1,0(s1) |(f) |ld a3,0(s2)
+| | |(g) |lw a4,4(s2)
+| | | |xor a5,a4,a4
+| | | |add s0,s0,a5
+| | |(h) |sw t1,0(s0)
+4+|结果：`a0=1`，`a1=1`，`a2=0`，`a3=1`，`a4=0`
+|===
+
+[[rsw2]]
+.混合大小差异（公理模型允许，操作模型禁止）
+[%autowidth,float="center",align="center",cols="^,<,^,<",options="header"]
+|===
+2+|Hart 0 2+^|Hart 1
+2+|li t1, 1 2+^|li t1, 1
+|(a) |lw a0,0(s0) |(d) |ld a1,0(s1)
+|(b) |fence rw,rw |(e) |lw a2,4(s1)
+|(c) |sw t1,0(s1) | |xor a3,a2,a2
+| | | |add s0,s0,a3
+| | |(f) |sw t1,0(s0)
+4+|结果：`a0=1`，`a1=1`，`a2=0`
+|===
+
+[[rsw3]]
+.混合大小差异（公理模型允许，操作模型禁止）
+[%autowidth,float="center",align="center",cols="^,<,^,<",options="header",]
+|===
+2+|Hart 0 2+^|Hart 1
+2+|li t1, 1 2+^|li t1, 1
+|(a) |lw a0,0(s0) |(d) |sw t1,4(s1)
+|(b) |fence rw,rw |(e) |ld a1,0(s1)
+|(c) |sw t1,0(s1) |(f) |lw a2,4(s1)
+| | | |xor a3,a2,a2
+| | | |add s0,s0,a3
+| | |(g) |sw t1,0(s0)
+4+|结果：`a0=1`，`a1=0x100000001`，`a2=1`
+|===
+
+在 <<rsw1>>-<<rsw3>> 中所示的混合大小 RSW 变体系列中，操作规范和公理规范之间存在已知差异。为了解决这个问题，我们可以选择添加类似以下新的 PPO 规则：内存操作 _a_ 在保留程序顺序中先于内存操作 _b_（因此也在全局内存顺序中），如果 _a_ 在程序顺序中先于 _b_，_a_ 和 _b_ 都访问常规主内存（而不是 I/O 区域），_a_ 是加载，_b_ 是存储，在 _a_ 和 _b_ 之间有一个加载 _m_，有一个字节 _x_，_a_ 和 _m_ 都读取它，在 _a_ 和 _m_ 之间没有写入 _x_ 的存储，并且 _m_ 在 PPO 中先于 _b_。换句话说，在 herd 语法中，我们可以选择将 `(po-loc & rsw);ppo;[W]` 添加到 PPO。许多实现将自然地强制执行此排序。因此，即使此规则不是官方的，我们仍建议实现者强制执行它，以确保与未来可能将此规则添加到 RVWMO 的前向兼容性。
+EOF < /dev/null

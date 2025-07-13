@@ -967,6 +967,42 @@ Write_reg(`x1`, `0x42`, Done)。许多 Internal(_next_state_) 状态可能出现
 
 状态为 Plain(Internal(_next_state_)) 的指令实例 latexmath:[$i$] 总是可以执行该伪代码内部步骤。操作：将 latexmath:[$i$] 的状态更新为 Plain(_next_state_)。
 
+操作：
+
+. 更新 latexmath:[$i.\textit{mem\_loads}$] 以指示 latexmath:[$mlo$] 已由 latexmath:[$msoss$] 满足；并且
+. 重新启动任何因此违反一致性的推测性指令，即，对于每个程序顺序后继于 latexmath:[$i$] 的非完成指令 latexmath:[$i'$]，以及 latexmath:[$i'$] 的每个从 latexmath:[$msoss'$] 满足的内存加载操作 latexmath:[$mlo'$]，如果 latexmath:[$msoss'$] 中存在内存存储操作切片 latexmath:[$msos'$]，并且 latexmath:[$msoss$] 中存在来自不同内存存储操作的重叠内存存储操作切片，并且 latexmath:[$msos'$] 不是来自 latexmath:[$i$] 的程序顺序后继指令，则重新启动 latexmath:[$i'$] 及其 _restart-dependents_。
+
+其中，指令 latexmath:[$j$] 的 _restart-dependents_ 是：
+
+* latexmath:[$j$] 的程序顺序后继，它们对 latexmath:[$j$] 的寄存器写入有数据流依赖关系；
+* latexmath:[$j$] 的程序顺序后继，它们有一个内存加载操作从 latexmath:[$j$] 的内存存储操作读取（通过转发）；
+* 如果 latexmath:[$j$] 是 load-acquire，则所有 latexmath:[$j$] 的程序顺序后继；
+* 如果 latexmath:[$j$] 是加载，对于每个设置了 `.sr` 和 `.pr` 但未设置 `.pw` 的 `fence` latexmath:[$f$]，它是 latexmath:[$j$] 的程序顺序后继，则所有是 latexmath:[$f$] 程序顺序后继的加载指令；
+* 如果 latexmath:[$j$] 是加载，对于每个是 latexmath:[$j$] 程序顺序后继的 `fence.tso` latexmath:[$f$]，则所有是 latexmath:[$f$] 程序顺序后继的加载指令；以及
+* （递归地）上述所有指令实例的所有 restart-dependents。
+
+[NOTE]
+====
+将内存存储操作转发到内存加载可能只满足加载的某些切片，而其他切片保持未满足。
+
+当在上述转换时不可用的程序顺序先前存储操作变得可用时，可能会使 latexmath:[$msoss$] 临时不合理（违反一致性）。该存储将阻止加载完成（参见 <<finish, 完成指令>>），并将在该存储操作传播时导致其重新启动（参见 <<prop_store, 传播存储操作>>）。
+
+上述转换条件的一个后果是，store-release-RCsc 内存存储操作不能转发到 load-acquire-RCsc 指令：latexmath:[$msoss$] 不包括来自已完成存储的内存存储操作（因为这些必须是已传播的内存存储操作），上述条件要求当加载是 acquire-RCsc 时，所有程序顺序先前的 store-releases-RCsc 都已完成。
+====
+
+[[sat_from_mem]]
+===== 从内存满足内存加载操作
+
+对于非 AMO 加载指令的指令实例 latexmath:[$i$] 或在 <<do_amo, 满足、提交和传播 AMO 操作>> 转换上下文中的 AMO 指令，以及 latexmath:[$i.\textit{mem\_loads}$] 中的内存加载操作 latexmath:[$mlo$]，如果满足以下条件，则 latexmath:[$mlo$] 可以通过读取存储在共享内存状态中的存储操作来满足：
+
+. 没有程序顺序先前的 store-release 指令覆盖 latexmath:[$mlo$] 的任何地址，其内存存储操作尚未传播，并且没有程序顺序后继于该 store-release 的中间存储指令覆盖这些地址；
+. 如果 latexmath:[$i$] 是 load-acquire，则所有程序顺序先前的 store-release 指令都已完成；
+. 如果 latexmath:[$i$] 是 load-acquire-RCsc，则所有程序顺序先前的 store-release-RCsc 指令都已完成；
+. latexmath:[$mlo$] 在一致性方面是合理的（即不违反一致性），即，对于每个与 latexmath:[$mlo$] 重叠的内存存储操作切片 latexmath:[$msos$]，所有程序顺序后继存储指令的内存存储操作切片也与 latexmath:[$msos$] 重叠，且尚未传播，必须来自程序顺序后继于生成 latexmath:[$msos$] 的指令的指令；并且
+. 在程序顺序中 latexmath:[$i$] 和生成 latexmath:[$msos$] 的指令之间没有加载指令从与 latexmath:[$msos$] 重叠的不同 hart 的内存存储操作切片满足。
+
+操作：更新 latexmath:[$i.\textit{mem\_loads}$] 以指示 latexmath:[$mlo$] 已从共享内存满足。
+
 [[finish]]
 ===== 完成指令
 
