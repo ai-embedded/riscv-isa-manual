@@ -2353,6 +2353,86 @@ X(rd) = EXTS(hi_half @ lo_half);
 因此，对于 RV64，任何包含 `packw` 指令的扩展也包含 `zext.h` 指令（但不一定包含 `c.zext.h` 指令，只有当 Zcb 和 Zbb 扩展都实现时才保证存在）。
 
 <<<
+[#insns-rev8,reftext="字节反转寄存器"]
+==== rev8
+
+概要::
+字节反转寄存器
+
+助记符::
+rev8 _rd_, _rs_
+
+编码 (RV32)::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5 },
+    { bits:  5, name: 'rs' },
+    { bits: 12, name: 0x698 }
+]}
+....
+
+编码 (RV64)::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x13, attr: ['OP-IMM'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x5 },
+    { bits:  5, name: 'rs' },
+    { bits: 12, name: 0x6b8 }
+]}
+....
+
+描述::
+此指令反转 _rs_ 中字节的顺序。
+
+操作::
+[source,sail]
+--
+let input = X(rs);
+let output : xlenbits = 0;
+let j = xlen - 1;
+
+foreach (i from 0 to (xlen - 8) by 8) {
+   output[i..(i + 7)] = input[(j - 7)..j];
+   j = j - 8;
+}
+
+X[rd] = output
+--
+
+.注意
+[NOTE, caption="A" ]
+===============================================================
+*rev8* 助记符在 RV32 和 RV64 中对应不同的指令编码。
+===============================================================
+
+.软件提示
+[NOTE, caption="SH" ]
+===============================================================
+字节反转操作仅适用于完整的寄存器宽度。要模拟字大小和半字大小的字节反转，请执行 `rev8 rd,rs`，然后执行 `srai rd,rd,K`，其中 K 分别为 XLEN-32 和 XLEN-16。
+===============================================================
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|v1.0
+|已批准
+
+|Zbkb (<<#zbkb>>)
+|v1.0
+|已批准
+|===
+
+<<<
 [#insns-brev8,reftext="字节内位反转"]
 ==== brev8
 
@@ -3362,6 +3442,69 @@ function clause execute ( XPERM4 (rs2,rs1,rd)) = {
 
 |Zbkx (<<#zbkx>>)
 |v1.0
+|已批准
+|===
+
+<<<
+[#insns-zext_h,reftext="零扩展半字"]
+==== zext.h
+
+概要::
+零扩展半字
+
+助记符::
+zext.h _rd_, _rs_
+
+编码 (RV32)::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x33, attr: ['OP'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x4, attr: ['ZEXT.H']},
+    { bits:  5, name: 'rs' },
+    { bits:  5, name: 0x00 },
+    { bits:  7, name: 0x04 },
+]}
+....
+
+编码 (RV64)::
+[wavedrom, , svg]
+....
+{reg:[
+    { bits:  7, name: 0x3b, attr: ['OP-32'] },
+    { bits:  5, name: 'rd' },
+    { bits:  3, name: 0x4, attr: ['ZEXT.H']},
+    { bits:  5, name: 'rs' },
+    { bits:  5, name: 0x00 },
+    { bits:  7, name: 0x04 },
+]}
+....
+
+描述::
+此指令通过在所有高于第 15 位的位中插入 0，将源的最低有效半字零扩展到 XLEN。
+
+操作::
+[source,sail]
+--
+X(rd) = EXTZ(X(rs)[15..0]);
+--
+
+.注意
+[NOTE, caption="A" ]
+===============================================================
+*zext.h* 助记符在 RV32 和 RV64 中对应不同的指令编码。
+===============================================================
+
+包含在::
+[%header,cols="4,2,2"]
+|===
+|扩展
+|最低版本
+|生命周期状态
+
+|Zbb (<<#zbb>>)
+|0.93
 |已批准
 |===
 

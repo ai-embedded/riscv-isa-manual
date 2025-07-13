@@ -548,4 +548,160 @@ include::images/bytefield/rvc-instr-quad1.edn[]
 [[rvc-instr-table2]]
 .RVC 指令列表，象限 2
 include::images/bytefield/rvc-instr-quad2.edn[]
-//include::images/bytefield/rvc-instr-quad2.png[]
+//include::images/bytefield/rvc-instr-quad2.png[]// 这是 c-st-ext.adoc 的缺失部分的中文翻译
+// 应该从第551行后开始添加
+
+==== 整数寄存器-立即数操作
+
+这些整数寄存器-立即数操作使用 CI 格式编码，对整数寄存器和 6 位立即数执行操作。
+
+[[c-integer-register-immediate]]
+include::images/wavedrom/c-int-reg-immed.edn[]
+//.整数寄存器-立即数格式。
+(((compressed, integer register-immediate)))
+
+C.ADDI 将非零符号扩展的 6 位立即数加到寄存器 _rd_ 中的值，然后将结果写入 _rd_。C.ADDI 扩展为 `addi rd, rd, imm`。
+_rd_≠0 且 _imm_=0 的代码点是 HINT。
+_rd_=`x0` 的代码点编码 C.NOP 指令，其中 _imm_≠0 的代码点是 HINT。
+
+C.ADDIW 是仅限 RV64C 的指令，执行相同的计算但产生 32 位结果，然后将结果符号扩展到 64 位。C.ADDIW 扩展为 `addiw rd, rd, imm`。对于 C.ADDIW，立即数可以为零，这对应于 `sext.w rd`。C.ADDIW 仅在 _rd_≠`x0` 时有效；_rd_=`x0` 的代码点被保留。
+
+C.ADDI16SP（加立即数到栈指针）与 C.LUI 共享操作码，但目标字段为 `x2`。C.ADDI16SP 将非零符号扩展的 6 位立即数加到栈指针（`sp=x2`）中的值，其中立即数被缩放以表示范围 [-512, 496] 内的 16 的倍数。C.ADDI16SP 用于在过程序言和尾声中调整栈指针。它扩展为 `addi x2, x2, nzimm[9:4]`。C.ADDI16SP 仅在 _nzimm_≠0 时有效；_nzimm_=0 的代码点被保留。
+
+[NOTE]
+====
+在标准的 RISC-V 调用约定中，栈指针 `sp` 始终是 16 字节对齐的。
+====
+
+[[c-ciw]]
+include::images/wavedrom/c-ciw.edn[]
+//.CIW 格式。
+(((compressed, CIW)))
+C.ADDI4SPN（加立即数到栈指针，非破坏性）是 CIW 格式指令，将一个_零_扩展的非零立即数（按 4 缩放）加到栈指针 `x2`，并将结果写入 `rd′`。此指令用于生成指向栈分配变量的指针，并扩展为 `addi rd′, x2, nzuimm[9:2]`。C.ADDI4SPN 仅在 _nzuimm_≠0 时有效；_nzuimm_=0 的代码点被保留。
+
+[[c-ci]]
+include::images/wavedrom/c-ci.edn[]
+//.CI 格式。
+(((compressed, CI)))
+
+C.SLLI 是 CI 格式指令，对寄存器 _rd_ 中的值执行逻辑左移，然后将结果写入 _rd_。移位量在 _shamt_ 字段中编码。
+C.SLLI 扩展为 `slli rd, rd, shamt[5:0]`。
+
+_shamt_=0 或 _rd_=`x0` 的 C.SLLI 代码点是 HINT。
+
+对于 RV32C，_shamt[5]_ 必须为零；_shamt[5]_=1 的代码点被指定用于自定义扩展。
+
+[[c-srli-srai]]
+
+include::images/wavedrom/c-srli-srai.edn[]
+//.C-SRLI-SRAI 格式。
+(((compressed, C.SRLI, C.SRAI)))
+
+C.SRLI 是 CB 格式指令，对寄存器 _rd′_ 中的值执行逻辑右移，然后将结果写入 _rd′_。移位量在 _shamt_ 字段中编码。
+C.SRLI 扩展为 `srli rd′, rd′, shamt`。
+
+_shamt_=0 的 C.SRLI 代码点是 HINT。
+
+对于 RV32C，_shamt[5]_ 必须为零；_shamt[5]_=1 的代码点被指定用于自定义扩展。
+
+C.SRAI 的定义类似于 C.SRLI，但执行算术右移。C.SRAI 扩展为 `srai rd′, rd′, shamt`。
+
+[NOTE]
+====
+对于 RV64C，_shamt[5]_=0 的合法移位量为 [1,31]，_shamt[5]_=1 的合法移位量为 [32,63]。
+
+对于 RV32C，合法移位量为 [1,31]。
+====
+
+[[c-andi]]
+include::images/wavedrom/c-andi.edn[]
+//.C-ANDI format.
+(((compressed, C.ANDI)))
+
+C.ANDI 是 CB 格式指令，计算寄存器 _rd′_ 中的值与符号扩展的 6 位立即数的按位与，然后将结果写入 _rd′_。C.ANDI 扩展为 `andi rd′, rd′, imm`。
+
+==== 整数寄存器到寄存器操作
+
+include::images/wavedrom/c-int-reg-to-reg-cr-format.edn[]
+//.CR format.
+
+这些指令使用 CR 格式对两个整数寄存器执行操作。
+
+C.MV 将寄存器 _rs2_ 中的值复制到寄存器 _rd_ 中。C.MV 扩展为 `add rd, x0, rs2`。
+当 _rs2_=`x0` 时，C.MV 是一个编码浪费的代码点；这些代码点是 HINT。
+当 _rd_=`x0` 时，C.MV 对应于合法 MV 的用法编码，而不是 HINT，尽管这些编码不会更改任何用户可见状态。
+
+C.ADD 将寄存器 _rs2_ 中的值加到寄存器 _rd_ 中，然后将结果写入 _rd_。C.ADD 扩展为 `add rd, rd, rs2`。
+C.ADD 只适用于当 _rs2_≠`x0` 时；C.ADD 与 _rs2_=`x0` 的代码点对应于 C.JALR 和 C.EBREAK。
+当 _rd_=`x0` 时，C.ADD 对应于合法 ADD 的用法编码，而不是 HINT，尽管这些编码不会更改任何用户可见状态。
+
+include::images/wavedrom/c-int-reg-to-reg-ca-format.edn[]
+//.CA format.
+
+这些指令使用 CA 格式对两个整数寄存器执行操作。
+
+C.AND 计算寄存器 _rd′_ 和寄存器 _rs2′_ 中值的按位与，然后将结果写入 _rd′_。C.AND 扩展为 `and rd′, rd′, rs2′`。
+
+C.OR 计算寄存器 _rd′_ 和寄存器 _rs2′_ 中值的按位或，然后将结果写入 _rd′_。C.OR 扩展为 `or rd′, rd′, rs2′`。
+
+C.XOR 计算寄存器 _rd′_ 和寄存器 _rs2′_ 中值的按位异或，然后将结果写入 _rd′_。C.XOR 扩展为 `xor rd′, rd′, rs2′`。
+
+C.SUB 从寄存器 _rd′_ 中的值减去寄存器 _rs2′_ 中的值，然后将结果写入 _rd′_。C.SUB 扩展为 `sub rd′, rd′, rs2′`。
+
+C.ADDW（仅限 RV64C/RV128C）将寄存器 _rs2′_ 中的值加到寄存器 _rd′_ 中，然后在将结果符号扩展到 64 位后写入 _rd′_。C.ADDW 扩展为 `addw rd′, rd′, rs2′`。
+
+C.SUBW（仅限 RV64C/RV128C）从寄存器 _rd′_ 中的值减去寄存器 _rs2′_ 中的值，然后在将结果符号扩展到 64 位后写入 _rd′_。C.SUBW 扩展为 `subw rd′, rd′, rs2′`。
+
+[NOTE]
+====
+本手册早期版本未包括 C.ADDW 和 C.SUBW，因为它们可能鼓励使用 32 位运算，从而可能导致性能降低。当需要与需要包含 C.ADDW 和 C.SUBW 的 RVC 代码进行兼容时，汇编器可以选择将 C.ADDW 和 C.SUBW 编码为自定义 C1 指令。
+====
+
+[[mop]]
+include::images/wavedrom/c-mop.edn[]
+//.C-MOP format.
+
+==== 定义的非法指令
+
+此非法指令用于创建一个对应于最短可用未定义指令的定义非法指令。
+
+[[c-def-illegal-inst]]
+include::images/wavedrom/c-def-illegal-inst.edn[]
+//.C-Defined illegal instruction.
+
+C.ILLEGAL 指令的目的是明确保留一条压缩编码点，以便在用户可见状态上引起最小的损坏就与非法指令异常相关联。C.ILLEGAL 指令的编码保证永远不会被分配给任何其他指令，而且因为它只是 16 位的占用空间，对二进制兼容性或代码大小的影响最小。
+
+==== NOP 指令
+
+[[c-nop-instr]]
+include::images/wavedrom/c-nop-instr.edn[]
+//.C.NOP format.
+
+C.NOP 是不改变任何用户可见状态的 CI 格式指令，除了推进 `pc` 并增加任何适用的性能计数器。C.NOP 扩展为 `nop`。C.NOP 编码只有与 _imm_=0 一起；其他立即数编码是 HINT。
+
+==== 断点指令
+
+[[c-breakpoint-instr]]
+include::images/wavedrom/c-breakpoint-instr.edn[]
+//.C.EBREAK format.
+
+调试器可以使用 C.EBREAK 指令作为断点。它与带有 _rs2_=`x0` 的 C.ADD 共享操作码。C.EBREAK 扩展为 `ebreak`。
+
+=== HINT 指令
+
+[NOTE]
+====
+C 扩展的具体 HINT 编码已由标准化委员会指定；有关详细信息，请参阅<<riscv-unpriv>>第 24 章。
+====
+
+[[compressed-code-size-reduction]]
+=== RVC 代码大小减少
+
+[NOTE]
+====
+与传统的可变长度指令集相比，RVC 提供了大约 25%-30% 的代码大小减少，但事实上，代码大小减少会因代码而异。较小的代码大小减少将在某些应用程序中看到，这些应用程序使用了许多多寄存器操作、浮点寄存器操作和整数乘除法，它们没有等效的 RVC 指令。相反，使用更多栈内存引用、具有小偏移量的加载和存储操作、分支到附近位置、16 位常量生成和寄存器到寄存器复制的应用程序会显示更大的节省。
+
+使用 RVC 的简单微控制器实现可能需要大约 1,500 个额外的门（无论是用于解码还是复用），或者总共 2,700-3,000 之间。无序微架构的相对影响可能很小，也许占管道控制成本的 1%。
+
+选择 CIW、CL、CS 格式的立即数的编码，以尽可能满足它们所代表的指令（SP 相对地址、基于基址寄存器的加载和存储以及跳转目标）的自然对齐约束，进一步帮助代码大小减少。
+====
